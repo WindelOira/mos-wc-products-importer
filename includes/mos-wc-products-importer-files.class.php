@@ -29,33 +29,39 @@ if( !class_exists('MOS_WC_Files') ) :
          * @return array
          */
         public static function getFileIDs($attached = FALSE, $status = 'inherit', $folder = FALSE) {
-            global $wpdb;
             $fileIDs = [];
-            
-            $args = "SELECT ID FROM ". $wpdb->posts;
-            $args .= " LEFT JOIN ". $wpdb->postmeta;
-            $args .= " ON (". $wpdb->posts .".ID = ". $wpdb->postmeta .".post_id)";
-            $args .= " WHERE ". $wpdb->posts .".post_type = 'attachment'";
-            $args .= " AND ". $wpdb->posts .".post_status = '". $status ."'";
-            $args .= " AND (". $wpdb->postmeta .".meta_key = '_mos_file' AND ". $wpdb->postmeta .".meta_value = 1)";
+
+            $args = [
+                'post_type'         => 'attachment',
+                'post_status'       => $status,
+                'posts_per_page'    => -1,
+                'meta_query'        => [
+                    'relation'          => 'AND',
+                    [
+                        'key'           => '_mos_file',
+                        'value'         => 1
+                    ]
+                ]
+            ];
 
             if( $attached ) :
-                $args .= " AND (". $wpdb->postmeta .".meta_key = '_mos_file_attached' AND ". $wpdb->postmeta .".meta_value = '". $attached ."')";
+                $args['meta_query'][] = [
+                    'key'       => '_mos_file_attached',
+                    'value'     => $attached
+                ];
             endif;
 
             if( $folder !== FALSE ) :
-                $args .= " AND (". $wpdb->postmeta .".meta_key = '_mos_file_folder' AND ". $wpdb->postmeta .".meta_value = '". $folder ."')";
+                $args['meta_query'][] = [
+                    'key'       => '_mos_file_folder',
+                    'value'     => $folder
+                ];
             endif;
 
-            $results = $wpdb->get_results($args);
+            $query = new WP_Query($args);
+            wp_reset_postdata();
 
-            if( $results ) :
-                foreach( $results as $result ) :
-                    $fileIDs[] = $result->ID;
-                endforeach;
-            endif;
-
-            return $fileIDs;
+            return $query->posts;
         }
 
         /**
@@ -160,27 +166,30 @@ if( !class_exists('MOS_WC_Files') ) :
                 $name = $name[0];
             endif;
 
-            $args = "SELECT ID FROM ". $wpdb->posts;
-            $args .= " LEFT JOIN ". $wpdb->postmeta;
-            $args .= " ON (". $wpdb->posts .".ID = ". $wpdb->postmeta .".post_id)";
-            $args .= " WHERE ". $wpdb->posts .".post_type = 'product'";
-            $args .= " AND ". $wpdb->postmeta .".meta_key = '_supplier_part_number'";
-            if( is_array($name) ) :
-                $args .= " AND $wpdb->postmeta.meta_value IN (". implode(',', $name) .")";
-            else :
-                $args .= " AND $wpdb->postmeta.meta_value LIKE '". $name ."%'";
-            endif; 
-            
-            $results = $wpdb->get_results($args);
-            if( $results ) :
-                foreach( $results as $result ) :
-                    $product = wc_get_product($result);
+            $args = [
+                'post_type'         => 'product',
+                'posts_per_page'    => -1,
+                'meta_query'        => [
+                    'relation'          => 'AND',
+                    [
+                        'key'           => '_supplier_part_number',
+                        'value'         => is_array($name) ? $name : $name,
+                        'compare'       => is_array($name) ? 'IN' : 'LIKE'
+                    ]
+                ]
+            ];
+
+            $query = new WP_Query($args);
+            if( 0 < count($query->posts) ) :
+                foreach( $query->posts as $product ) :
+                    $product = wc_get_product($product);
 
                     if( $product ) :
                         $product->set_image_id($attachmentID);
                         $product->save();
                     endif;
                 endforeach;
+                wp_reset_postdata();
             endif;
         }
 
@@ -323,35 +332,6 @@ if( !class_exists('MOS_WC_Files') ) :
             $data = @$_POST['data'];
             $mosFiles = !is_array($data['id']) ? [$data['id']] : $data['id'];
 
-            // Check for folders
-            // foreach( $mosFiles as $file ) :
-            //     if( $mosFile = get_post(intval($file)) ) :
-            //         if( $mosFile->__get('_mos_file_type') == 'folder' ) :
-            //             $folderFiles = new WP_Query([
-            //                 'post_type'         => 'mos_files',
-            //                 'posts_per_page'    => -1,
-            //                 'post_status'       => $data['permanent'] == 'true' ? ['trash'] : ['publish'],
-            //                 'meta_query'        => [
-            //                     'relation'          => 'AND',
-            //                     [
-            //                         'key'           => '_mos_file_dir',
-            //                         'value'         => $mosFile->post_title
-            //                     ]
-            //                 ]
-            //             ]);
-
-            //             if( $folderFiles->have_posts() ) :
-            //                 while( $folderFiles->have_posts() ) :
-            //                     $folderFiles->the_post();
-
-            //                     $mosFiles[] = get_the_ID();
-            //                 endwhile;
-            //                 wp_reset_postdata();
-            //             endif;
-            //         endif;
-            //     endif;
-            // endforeach;
-
             // Run delete
             foreach( $mosFiles as $file ) :
                 if( $mosFile = self::getFile($file) ) :
@@ -391,35 +371,6 @@ if( !class_exists('MOS_WC_Files') ) :
             $data = @$_POST['data'];
 
             $mosFiles = !is_array($data['id']) ? [$data['id']] : $data['id'];
-
-            // Check for folders
-            // foreach( $mosFiles as $file ) :
-            //     if( $mosFile = get_post(intval($file)) ) :
-            //         if( $mosFile->__get('_mos_file_type') == 'folder' ) :
-            //             $folderFiles = new WP_Query([
-            //                 'post_type'         => 'mos_files',
-            //                 'posts_per_page'    => -1,
-            //                 'post_status'       => 'trash',
-            //                 'meta_query'        => [
-            //                     'relation'          => 'AND',
-            //                     [
-            //                         'key'           => '_mos_file_dir',
-            //                         'value'         => str_replace('__trashed', '', $mosFile->post_name)
-            //                     ]
-            //                 ]
-            //             ]);
-
-            //             if( $folderFiles->have_posts() ) :
-            //                 while( $folderFiles->have_posts() ) :
-            //                     $folderFiles->the_post();
-
-            //                     $mosFiles[] = get_the_ID();
-            //                 endwhile;
-            //                 wp_reset_postdata();
-            //             endif;
-            //         endif;
-            //     endif;
-            // endforeach;
 
             // Run restore
             foreach( $mosFiles as $file ) :

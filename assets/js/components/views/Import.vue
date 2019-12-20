@@ -159,36 +159,22 @@
             </v-stepper-content>
 
             <v-stepper-content step="5" class="text-center">
-                <div v-if="data.hasImageLinks && !data.importing">
-                    <h3>Your file contains column for image links. Are you going to upload images only and not import products?</h3>
-                    <v-btn
-                        @click="data.importProducts=false;doImport(5, true)"  
-                        color="primary" 
-                        class="mb-3 mr-1">Yes</v-btn>
-                    <v-btn 
-                        @click="data.importProducts=true;doImport(5, true)" 
-                        color="error" 
-                        class="mb-3 ml-1">No</v-btn>
+                <div v-if="data.cleaningUp">
+                    <v-progress-circular
+                        :value="((data.unimported.deleted / data.unimported.items.length) * 100)" 
+                        :size="150"
+                        :width="20"
+                        color="orange"></v-progress-circular>
+                    <h3 class="mb-0" v-if="data.cleaningUp">Cleaning up...</h3>
                 </div>
 
-                <div v-if="data.importing">
-                    <div v-if="data.cleaningUp">
-                        <v-progress-circular
-                            :value="((data.unimported.deleted / data.unimported.items.length) * 100)" 
-                            :size="150"
-                            :width="20"
-                            color="orange"></v-progress-circular>
-                        <h3 class="mb-0" v-if="data.cleaningUp">Cleaning up...</h3>
-                    </div>
-
-                    <div v-else>
-                        <v-progress-circular
-                            :value="((data.imported.items.length / data.items.length) * 100)" 
-                            :size="150"
-                            :width="20"
-                            color="green"></v-progress-circular>
-                        <h3 class="mb-0">{{ data.imported.items.length }} of {{ data.items.length }}</h3>
-                    </div>
+                <div v-else>
+                    <v-progress-circular
+                        :value="((data.imported.items.length / data.items.length) * 100)" 
+                        :size="150"
+                        :width="20"
+                        color="green"></v-progress-circular>
+                    <h3 class="mb-0">{{ data.imported.items.length }} of {{ data.items.length }}</h3>
                 </div>
             </v-stepper-content>
 
@@ -409,9 +395,10 @@
 
                         if( instance.models.skipMapping && instance.models.skipImageSource ) {
                             if( !instance.data.hasImageLinks ) {
-                                instance.doImport(5, true)
-                                instance.data.importing = true
+                                instance.data.importProducts = true
+                                instance.doImport(5)
                             } else {
+                                instance.data.importProducts = false
                                 instance.doImport(5)
                             }
                         } else if( instance.models.skipMapping && !instance.models.skipImageSource ) {
@@ -439,9 +426,10 @@
 
                             if( this.models.skipMapping && this.models.skipImageSource ) {
                                 if( !this.data.hasImageLinks ) {
-                                    this.doImport(5, true)
-                                    this.data.importing = true
+                                    instance.data.importProducts = true
+                                    this.doImport(5)
                                 } else {
+                                    instance.data.importProducts = false
                                     this.doImport(5)
                                 }
                             } else if( this.models.skipMapping && !this.models.skipImageSource ) {
@@ -454,15 +442,11 @@
                     })
                 }
             },
-            doImport(step = false, proceed = false) {
+            doImport(step = false) {
                 if( step ) {
                     this.stepTo(step)
                 }
                 
-                if( !proceed ) 
-                    return false
-
-                this.data.importing = true
                 this.data.loading = true
 
                 axios({
@@ -485,7 +469,7 @@
                     if( response.data.skipped || 
                         this.data.imported.items.length < this.data.items.length ) {
                         this.data.imported.batch += 1
-                        this.doImport(step, true)
+                        this.doImport(step)
                     } else {
                         if( this.data.importProducts ) {
                             this.getUnimported(true)

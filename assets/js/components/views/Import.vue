@@ -187,9 +187,12 @@
                     </v-list-item-avatar>
                     <v-list-item-content>
                         <v-list-item-title>{{ item.title }}</v-list-item-title>
-                        <v-list-item-subtitle>Product ID: #{{ item.id }} | SKU: {{ item.sku }}</v-list-item-subtitle>
+                        <v-list-item-subtitle 
+                            v-if="!item.is_image">Product ID: #{{ item.id }} | SKU: {{ item.sku }}</v-list-item-subtitle>
                     </v-list-item-content>
-                    <v-list-item-action class="mx-0 d-block">
+                    <v-list-item-action 
+                        v-if="!item.is_image" 
+                        class="mx-0 d-block">
                         <v-btn 
                             v-if="item.url" 
                             :href="item.url" 
@@ -248,7 +251,10 @@
                 data    : {
                     time            : new Date().getTime(),
                     loading         : false,
+                    importing       : false,
                     cleaningUp      : false,
+                    hasImageLinks   : false,
+                    importProducts  : true,
                     imagesSource    : [],
                     items           : [],
                     sources         : [],
@@ -268,6 +274,7 @@
                             {key:'sale_price', selected:null},
                             {key:'tax_class', selected:'GST'},
                             {key:'supplier_part_number', selected:'Supplier Part No.'},
+                            {key:'image_link', selected:'Image Link'},
                             {key:'barcode', selected:'Barcode'},
                             {key:'inner_barcode', selected:'Inner Barcode'},
                             {key:'uom', selected:'Units'},
@@ -370,6 +377,11 @@
                                     instance.data.map.headers.push(h == 0 ? '__EMPTY' : '__EMPTY_'+ h)
                                 }
                             }
+
+                            if( 0 <= instance.data.map.headers.indexOf('Image Link') ) {
+                                instance.data.hasImageLinks = true
+                            }
+
                             instance.data.items = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName])
                         })
                     }
@@ -382,7 +394,13 @@
                         instance.data.loading = false
 
                         if( instance.models.skipMapping && instance.models.skipImageSource ) {
-                            instance.doImport(5)
+                            if( !instance.data.hasImageLinks ) {
+                                instance.data.importProducts = true
+                                instance.doImport(5)
+                            } else {
+                                instance.data.importProducts = false
+                                instance.doImport(5)
+                            }
                         } else if( instance.models.skipMapping && !instance.models.skipImageSource ) {
                             instance.getImageFolders()
                             instance.stepTo(4)
@@ -402,8 +420,18 @@
                             this.data.map.headers = Object.keys(this.data.items[0])
                             this.data.loading = false
 
+                            if( 0 <= this.data.map.headers.indexOf('Image Link') ) {
+                                this.data.hasImageLinks = true
+                            }
+
                             if( this.models.skipMapping && this.models.skipImageSource ) {
-                                this.doImport(5)
+                                if( !this.data.hasImageLinks ) {
+                                    instance.data.importProducts = true
+                                    this.doImport(5)
+                                } else {
+                                    instance.data.importProducts = false
+                                    this.doImport(5)
+                                }
                             } else if( this.models.skipMapping && !this.models.skipImageSource ) {
                                 this.getImageFolders()
                                 this.stepTo(4)
@@ -430,6 +458,7 @@
                             nonce           : mosWC.ajax.nonce,
                             items           : this.data.items.slice((this.data.imported.batch - 1), this.data.imported.batch),
                             map             : this.data.map,
+                            importProducts  : this.data.importProducts ? 1 : 0,
                             imageSources    : 0 < this.data.sources.length ? this.data.sources : '',
                             time            : this.data.time
                         }
@@ -442,13 +471,19 @@
                         this.data.imported.batch += 1
                         this.doImport(step)
                     } else {
-                        this.getUnimported()
+                        if( this.data.importProducts ) {
+                            this.getUnimported(true)
+                        } else {
+                            this.data.loading = false
+
+                            this.stepTo(6)
+                        }
                     }
                 }).catch(error => {
                     console.log(error)
                 })
             },
-            getUnimported() {
+            getUnimported(doDelete = false) {
                 axios({
                     url     : mosWC.ajax.url,
                     method  : 'POST',
@@ -462,7 +497,14 @@
                     if( 0 < response.data.items.length ) {
                         this.data.unimported.items = this.data.unimported.items.concat(response.data.items)
 
-                        this.deleteUnimported(this.data.unimported.items)
+                        if( doDelete ) {
+                            this.deleteUnimported(this.data.unimported.items)
+                        }
+                    } else {
+                        this.data.loading = false
+                        this.data.cleaningUp = false
+
+                        this.stepTo(6)
                     }
                 }).catch(error => {
                     console.log(error)

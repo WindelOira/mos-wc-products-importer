@@ -76,7 +76,7 @@
                     :extension-height="40" 
                     class="mb-5">
                     <v-btn 
-                        v-if="!models.uploaded.loading && models.uploaded.active.folder != 'root'" 
+                        v-if="!models.uploaded.loading && models.uploaded.active.folder != ''" 
                         @click="getUploadedFiles('', models.uploaded.active.status)" 
                         icon>
                         <v-icon>mdi-arrow-left</v-icon>
@@ -85,7 +85,7 @@
                     <v-toolbar-title>
                         Uploaded Images 
                         <span 
-                            v-if="models.uploaded.active.folder != 'root'">
+                            v-if="models.uploaded.active.folder != ''">
                             <v-icon>mdi-chevron-right</v-icon> {{ models.uploaded.active.folder }}
                         </span>
                     </v-toolbar-title>
@@ -151,7 +151,7 @@
                     v-if="models.uploaded.active.status != 'trash' && models.showUploader"
                     :data="{nonce: settings.nonce, action: 'ajaxUpload', updateProducts: models.updateProducts}" 
                     :post-action="settings.actions.post" 
-                    :extensions="['jpg', 'gif', 'png', 'zip']" 
+                    :extensions="['jpg', 'gif', 'png', 'tif', 'zip']" 
                     :drop="true"
                     :multiple="true" 
                     :chunk-enabled="true" 
@@ -377,7 +377,7 @@
                         
                         JSZip.loadAsync(v.file).then(zip => {
                             // var zipName = v.file.name.replace('.'+ v.file.name.split('.').pop(), ''),
-                            var re = /(.jpg|.png|.gif|.ps|.jpeg)$/,
+                            var re = /(.jpg|.png|.gif|.tif|.ps|.jpeg)$/,
                                 promises = Object.keys(zip.files).filter(fileName => {
                                     // don't consider non image files
                                     return re.test(fileName.toLowerCase())

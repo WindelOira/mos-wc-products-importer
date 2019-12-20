@@ -40,15 +40,16 @@ if( !class_exists('MOS_WC_Files') ) :
                     [
                         'key'           => '_mos_file',
                         'value'         => 1
+                    ],
+                    [
+                        'key'       => '_mos_file_attached',
+                        'value'     => ''
                     ]
                 ]
             ];
 
             if( $attached ) :
-                $args['meta_query'][] = [
-                    'key'       => '_mos_file_attached',
-                    'value'     => $attached
-                ];
+                $args['meta_query'][1]['value'] = 1;
             endif;
 
             if( $folder !== FALSE ) :
@@ -61,7 +62,7 @@ if( !class_exists('MOS_WC_Files') ) :
             $query = new WP_Query($args);
             wp_reset_postdata();
 
-            return $query->posts;
+            return wp_list_pluck($query->posts, 'ID');
         }
 
         /**
@@ -139,12 +140,46 @@ if( !class_exists('MOS_WC_Files') ) :
         }
 
         /**
+         * Find file by supplier part number.
+         * 
+         * @param string        Supplier part number.
+         * 
+         * @return array
+         */
+        public static function findFileBySPU($spu) {
+            $args = [
+                'post_type'         => 'attachment',
+                'post_status'       => 'inherit',
+                'posts_per_page'    => 1,
+                'meta_query'        => [
+                    'relation'          => 'AND',
+                    [
+                        'key'           => '_mos_file',
+                        'value'         => 1
+                    ],
+                    [
+                        'key'           => '_mos_file_spu',
+                        'value'         => $spu
+                    ]
+                ]
+            ];
+
+            $query = new WP_Query($args);
+
+            if( 0 < count($query->posts) ) :
+                return $query->posts[0];
+            else :
+                return FALSE;
+            endif;
+        }
+
+        /**
          * @param string    Filename.
          * @param int       Attachment ID.
          * 
          * @return void
          */
-        public static function findAndUpdateProductsImageByFilename($filename, $attachmentID) {
+        public static function findAndUpdateProductsImageByFilename($filename, $attachmentID, $spu = '') {
             $wcProducts = wc_get_products([
                 'limit'     => -1
             ]);
@@ -152,36 +187,45 @@ if( !class_exists('MOS_WC_Files') ) :
             if( !$wcProducts )
                 return;
 
-            $delimiters = MOS_WC_Settings::getOption('delimiters');
-            $delimitersPattern = "/(";
-            if( $delimiters ) :
-                foreach( $delimiters as $delimiter ) :
-                    $delimitersPattern .= "\\". $delimiter ."|";
-                endforeach;
-            endif;
-            $delimitersPattern = rtrim($delimitersPattern, "|") .")/";
-            $name = preg_split($delimitersPattern, $filename);
-
-            if( MOS_WC_Settings::getOption('findFirst') == 'true' ) :
-                $name = $name[0];
-            endif;
-
             $args = [
                 'post_type'         => 'product',
                 'posts_per_page'    => -1,
                 'meta_query'        => [
-                    'relation'          => 'AND',
-                    [
-                        'key'           => '_supplier_part_number',
-                        'value'         => is_array($name) ? $name : $name,
-                        'compare'       => is_array($name) ? 'IN' : 'LIKE'
-                    ]
+                    'relation'          => 'AND'
                 ]
             ];
 
+            if( !empty($spu) ) :
+                $args['meta_query'][] = [
+                    'key'           => '_supplier_part_number',
+                    'value'         => $spu
+                ];
+            else :
+                $delimiters = MOS_WC_Settings::getOption('delimiters');
+                $delimitersPattern = "/(";
+                if( $delimiters ) :
+                    foreach( $delimiters as $delimiter ) :
+                        $delimitersPattern .= "\\". $delimiter ."|";
+                    endforeach;
+                endif;
+                $delimitersPattern = rtrim($delimitersPattern, "|") .")/";
+                $name = preg_split($delimitersPattern, $filename);
+
+                if( MOS_WC_Settings::getOption('findFirst') == 'true' ) :
+                    $name = $name[0];
+                endif;
+
+                $args['meta_query'][] = [
+                    'key'           => '_supplier_part_number',
+                    'value'         => is_array($name) ? $name : $name,
+                    'compare'       => is_array($name) ? 'IN' : 'LIKE'
+                ];
+            endif;
+
             $query = new WP_Query($args);
             if( 0 < count($query->posts) ) :
-                foreach( $query->posts as $product ) :
+                $products = wp_list_pluck($query->posts, 'ID');
+                foreach( $products as $product ) :
                     $product = wc_get_product($product);
 
                     if( $product ) :
@@ -198,19 +242,50 @@ if( !class_exists('MOS_WC_Files') ) :
          * 
          * @param file  File
          */
-        public static function uploadFile($file, $extracted = FALSE, $attached = FALSE, $folder = '', $updateProducts = FALSE) {
+        public static function uploadFile($file, $extracted = FALSE, $attached = FALSE, $folder = '', $updateProducts = FALSE, $fromURL = FALSE, $spu = '') {
             global $wpdb;
 
             if( !function_exists('wp_handle_upload') ) 
                 require_once(ABSPATH .'wp-admin/includes/file.php');
 
-            if( !$extracted ) :
+            if( !empty($spu) && $fileBySPU = self::findFileBySPU($spu) && $updateProducts ) :
+                self::findAndUpdateProductsImageByFilename($fileBySPU['post_title'], $fileBySPU['ID'], $spu);
+
+                return self::getFile($fileBySPU['ID']);
+            endif;
+
+            if( !$extracted && !$fromURL ) :
                 $uploadedFile = wp_handle_sideload($file, [
                     'test_form'     => FALSE,
                     'test_size'     => TRUE,
                     'test_upload'   => TRUE
                 ]);
                 $file = !$uploadedFile['error'] ? $uploadedFile['file'] : FALSE;               
+            endif;
+
+            if( $fromURL ) :
+                $tmpFile = download_url($file);
+
+                if( !is_wp_error($tmpFile) ) :
+                    $tmpFileBasename = basename($file);
+                    $tmpFileType = wp_check_filetype($tmpFileBasename);
+
+                    $file = [
+                        'name'      => $tmpFileBasename,
+                        'type'      => $tmpFileType ? $tmpFileType['type'] : '',
+                        'tmp_name'  => $tmpFile,
+                        'error'     => 0,
+                        'size'      => filesize($tmpFile)
+                    ];
+
+                    $uploadedFile = wp_handle_sideload($file, [
+                        'test_form'     => FALSE,
+                        'test_size'     => TRUE
+                    ]);
+                    $file = !$uploadedFile['error'] ? $uploadedFile['file'] : FALSE;  
+                else :
+                    return NULL;
+                endif;
             endif;
 
             $fileBasename = basename($file);
@@ -227,7 +302,8 @@ if( !class_exists('MOS_WC_Files') ) :
                     'meta_input'        => [
                         '_mos_file'             => TRUE,
                         '_mos_file_attached'    => $attached,
-                        '_mos_file_folder'      => $folder
+                        '_mos_file_folder'      => $folder,
+                        '_mos_file_spu'         => $spu
                     ]
                 ];
                 $attachmentID = wp_insert_attachment($attachment, $file);
@@ -239,7 +315,7 @@ if( !class_exists('MOS_WC_Files') ) :
                     wp_update_attachment_metadata($attachmentID, $attachmentData);
 
                     if( $updateProducts ) :
-                        self::findAndUpdateProductsImageByFilename($fileName, $attachmentID);
+                        self::findAndUpdateProductsImageByFilename($fileName, $attachmentID, $spu);
                     endif;
 
                     return self::getFile($attachmentID);

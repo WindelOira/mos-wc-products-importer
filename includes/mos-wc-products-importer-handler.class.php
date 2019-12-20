@@ -273,327 +273,373 @@ if( !class_exists('MOS_WC_Handler') ) :
             if( 0 < count($data['items']) ) :
                 $response['result'] = TRUE;
                 foreach( $data['items'] as $item ) :
-                    $productID = self::getProductBy('title', $item[$legend['title']]);
+                    if( !$data['importProducts'] &&
+                        (isset($legend['image_link']) && !empty($item[$legend['image_link']])) ) :
+                        if( isset($legend['supplier_part_number']) && !empty($item[$legend['supplier_part_number']]) ) :
+                            $uploadedFromURL = MOS_WC_Files::uploadFile($item[$legend['image_link']], FALSE, FALSE, '', TRUE, TRUE, $item[$legend['supplier_part_number']]);
+                        else :
+                            $uploadedFromURL = MOS_WC_Files::uploadFile($item[$legend['image_link']], FALSE, FALSE, '', TRUE, TRUE);
+                        endif;
+                        
+                        if( $uploadedFromURL ) :
+                            $response['skipped'] = FALSE;
+                            $response['items'][] = [
+                                'categories'            => [],
+                                'tags'                  => [],
+                                'brand'                 => 0,
+                                'id'                    => $uploadedFromURL['fileID'],
+                                'title'                 => $uploadedFromURL['title'],
+                                'sku'                   => '',
+                                'short_description'     => '',
+                                'description'           => '',
+                                'regular_price'         => 0,
+                                'sale_price'            => 0,
+                                'stock'                 => 0,
+                                'attributes'            => '',
+                                'url'                   => '',
+                                'image'                 => $uploadedFromURL['url'],
+                                'edit_url'              => '',
+                                'is_image'              => TRUE
+                            ];
+                        endif;
+                    else :
+                        $productID = self::getProductBy('title', $item[$legend['title']]);
 
-                    if( !$productID && 
-                        (isset($legend['sku']) && !empty($item[$legend['sku']])) &&
-                        $productIDBySku = wc_get_product_id_by_sku($item[$legend['sku']]) ) :
-                        $productID = $productIDBySku;
+                        if( !$productID && 
+                            (isset($legend['sku']) && !empty($item[$legend['sku']])) &&
+                            $productIDBySku = wc_get_product_id_by_sku($item[$legend['sku']]) ) :
+                            $productID = $productIDBySku;
+                        endif;
+
+                        $product = $productID ? wc_get_product($productID) : new WC_Product();
+                        $productDescription = '';
+                        $productCategories = [];
+                        $productTags = [];
+                        $productAttrs = [];
+                
+                        if( $productID && $data_store->is_existing_sku($productID, $item[$legend['sku']]) ) :
+                            $response['skipped'] = TRUE;
+                            $response['items'][] = [
+                                'categories'            => [],
+                                'tags'                  => [],
+                                'brand'                 => 0,
+                                'id'                    => 0,
+                                'title'                 => '',
+                                'sku'                   => '',
+                                'short_description'     => '',
+                                'description'           => '',
+                                'regular_price'         => 0,
+                                'sale_price'            => 0,
+                                'stock'                 => 0,
+                                'attributes'            => '',
+                                'url'                   => '',
+                                'image'                 => '',
+                                'edit_url'              => '',
+                                'is_image'              => FALSE
+                            ];
+                        else :
+                            // Product category
+                            if( isset($legend['category']) && 
+                                !empty($item[$legend['category']]) ) :
+                                $category = term_exists($item[$legend['category']], 'product_cat');
+
+                                if( $category ) :
+                                    $category = intval($category['term_id']);
+                                else :
+                                    $category = wp_insert_category([
+                                        'taxonomy'  => 'product_cat',
+                                        'cat_name'  => $item[$legend['category']]
+                                    ]);
+                                endif;
+
+                                $productCategories[0] = $category;
+                            endif;
+
+                            // Product child category
+                            if( isset($category) && 
+                                isset($legend['category_child']) && 
+                                !empty($item[$legend['category_child']]) ) :
+                                $childCategory = term_exists($item[$legend['category_child']], 'product_cat', $category);
+
+                                if( $childCategory ) :
+                                    $childCategory = intval($childCategory['term_id']);
+                                else :
+                                    $childCategory = wp_insert_category([
+                                        'taxonomy'          => 'product_cat',
+                                        'cat_name'          => $item[$legend['category_child']],
+                                        'category_parent'   => $category
+                                    ]);
+                                endif;
+
+                                unset($productCategories[0]);
+                                $productCategories[0] = $childCategory;
+                            endif;
+
+                            // Product grandchild category
+                            if( isset($category) && 
+                                isset($childCategory) && 
+                                isset($legend['category_grandchild']) && 
+                                !empty($item[$legend['category_grandchild']]) ) :
+                                $grandchildCategory = term_exists($item[$legend['category_grandchild']], 'product_cat', $childCategory);
+
+                                if( $grandchildCategory ) :
+                                    $grandchildCategory = intval($grandchildCategory['term_id']);
+                                else :
+                                    $grandchildCategory = wp_insert_category([
+                                        'taxonomy'          => 'product_cat',
+                                        'cat_name'          => $item[$legend['category_grandchild']],
+                                        'category_parent'   => $childCategory
+                                    ]);
+                                endif;
+
+                                unset($productCategories[0]);
+                                $productCategories[0] = $grandchildCategory;
+                            endif;
+
+                            // Product brand
+                            if( isset($legend['pwb-brand']) && 
+                                !empty($item[$legend['pwb-brand']]) ) :
+                                $brand = term_exists($item[$legend['pwb-brand']], 'pwb-brand');
+
+                                if( $brand ) :
+                                    $brand = intval($brand['term_id']);
+                                else :
+                                    $brand = wp_insert_category([
+                                        'taxonomy'  => 'pwb-brand',
+                                        'cat_name'  => $item[$legend['pwb-brand']]
+                                    ]);
+                                endif;
+                            endif;
+
+                            // Product tags
+                            if( (isset($legend['tag1']) && !empty($item[$legend['tag1']])) || 
+                                (isset($legend['tag2']) && !empty($item[$legend['tag2']])) ) :
+                                $tags = isset($item[$legend['tag1']]) ? explode(',', $item[$legend['tag1']]) : [];
+                                $tags = isset($item[$legend['tag2']]) ? array_merge($tags, explode(',', $item[$legend['tag2']])) : $tags;
+
+                                foreach( $tags as $tag ) :
+                                    $tagExists = term_exists($tag, 'product_tag');
+                                    if( $tagExists ) :
+                                        $productTags = array_merge($productTags, $tagExists);
+                                    else :
+                                        $productTags[] = wp_insert_category([
+                                            'taxonomy'  => 'product_tag',
+                                            'cat_name'  => $tag
+                                        ]);
+                                    endif;
+                                endforeach;
+                            endif;
+
+                            $product->set_category_ids($productCategories);
+                            $product->set_tag_ids($productTags);
+
+                            // Product title
+                            if( isset($legend['title']) && 
+                                !empty($item[$legend['title']]) &&
+                                $product->get_name() != $item[$legend['title']] ) :
+                                $product->set_name($item[$legend['title']]);
+                            endif;
+
+                            // Product slug
+                            if( isset($legend['slug']) &&
+                                !empty($item[$legend['slug']]) &&
+                                $product->get_name() != $item[$legend['title']] ) :
+                                $product->set_slug($item[$legend['slug']]);
+                            endif;
+
+                            // Product short description
+                            if( isset($legend['description']) &&
+                                !empty($item[$legend['description']]) && 
+                                $product->get_short_description() != $item[$legend['description']] ) :
+                                $product->set_short_description($item[$legend['description']]);
+                            endif;
+
+                            // Product sku
+                            if( isset($legend['sku']) &&
+                                !empty($item[$legend['sku']]) && 
+                                $product->get_sku() != $item[$legend['sku']] ) :
+                                $product->set_sku($item[$legend['sku']]);
+                            endif;
+
+                            // Product regular price
+                            if( isset($legend['regular_price']) && 
+                                !empty($item[$legend['regular_price']]) && 
+                                $product->get_regular_price() != $item[$legend['regular_price']] ) :
+                                $product->set_regular_price($item[$legend['regular_price']]);
+                            endif;
+
+                            // Product sale price
+                            if( isset($legend['sale_price']) && 
+                                !empty($item[$legend['sale_price']]) && 
+                                $product->get_sale_price() != $item[$legend['sale_price']] ) :
+                                $product->set_sale_price($item[$legend['sale_price']]);
+                            endif;
+
+                            // Product stock
+                            if( isset($legend['stock']) && 
+                                !empty($item[$legend['stock']]) && 
+                                $product->get_stock_quantity() != $item[$legend['stock']] ) :
+                                $product->set_stock_quantity($item[$legend['stock']]);
+                            endif;
+
+                            // Product tax class
+                            if( isset($legend['tax_class']) && 
+                                !empty($item[$legend['tax_class']]) ) :
+                                $product->set_tax_class(self::addGST($item[$legend['tax_class']]));
+                            endif;
+
+                            // Product description : barcode
+                            if( isset($legend['barcode']) && 
+                                !empty($item[$legend['barcode']]) && 
+                                $product->get_meta('_barcode') != $item[$legend['barcode']] ) :
+                                $product->update_meta_data('_barcode', $item[$legend['barcode']]);
+                            endif;
+
+                            // Product description : inner barcode
+                            if( isset($legend['inner_barcode']) && 
+                                !empty($item[$legend['inner_barcode']]) && 
+                                $product->get_meta('_inner_barcode') != $item[$legend['inner_barcode']] ) :
+                                $product->update_meta_data('_inner_barcode', $item[$legend['inner_barcode']]);
+                            endif;
+
+                            // Product meta : _woo_uom_input
+                            if( isset($legend['uom']) && 
+                                !empty($item[$legend['uom']]) && 
+                                $product->get_meta('_woo_uom_input') != $item[$legend['uom']] ) :
+                                $product->update_meta_data('_woo_uom_input', $item[$legend['uom']]);
+
+                                $productDescription .= '<p><strong>Each unit of this product is available in the quantity:</strong> '. $item[$legend['uom']] .'</p>';
+                            endif;
+
+                            // Prodcut attr : pa_ppu
+                            if( isset($legend['ppu']) && 
+                                !empty($item[$legend['ppu']]) ) :
+                                $productAttrs[] = self::createAttribute('pa_ppu', [$item[$legend['ppu']]], 1, 1, 0);
+
+                                $productDescription .= '<p><strong>Number of items per unit:</strong> '. $item[$legend['ppu']] .'</p>';
+
+                                $product->update_meta_data('_ppu', $item[$legend['ppu']]);
+                            endif;
+                            
+                            // Image link
+                            if( isset($legend['image_link']) && !empty($item[$legend['image_link']]) ) :
+                                if( isset($legend['supplier_part_number']) && !empty($item[$legend['supplier_part_number']]) ) :
+                                    $uploadedFromURL = MOS_WC_Files::uploadFile($item[$legend['image_link']], FALSE, TRUE, '', FALSE, TRUE, $item[$legend['supplier_part_number']]);
+                                else :
+                                    $uploadedFromURL = MOS_WC_Files::uploadFile($item[$legend['image_link']], FALSE, TRUE, '', FALSE, TRUE);
+                                endif;
+                                
+                                if( $uploadedFromURL ) :
+                                    $product->set_image_id($uploadedFromURL['fileID']);
+                                endif;
+                            endif;
+
+                            // Product attr : pa_supplier-part-no
+                            if( (isset($legend['supplier_part_number']) && !empty($item[$legend['supplier_part_number']])) && 
+                                (!isset($legend['image_link']) || empty($legend['image_link'])) ) :
+                                $product->update_meta_data('_supplier_part_number', $item[$legend['supplier_part_number']]);
+
+                                $productAttrs[] = self::createAttribute('pa_supplier-part-no', [$item[$legend['supplier_part_number']]], 2, 0, 0);
+
+                                // Get SPU
+                                $delimiters = MOS_WC_Settings::getOption('delimiters');
+                                $delimitersPattern = "/(";
+                                if( $delimiters ) :
+                                    foreach( $delimiters as $delimiter ) :
+                                        $delimitersPattern .= "\\". $delimiter ."|";
+                                    endforeach;
+                                endif;
+                                $delimitersPattern = rtrim($delimitersPattern, "|") .")/";
+                                $name = preg_split($delimitersPattern, $item[$legend['supplier_part_number']]);
+
+                                if( MOS_WC_Settings::getOption('findFirst') == 'true' ) :
+                                    $name = $name[0];
+                                endif;
+
+                                $args = [
+                                    'post_type'             => 'attachment',
+                                    'posts_per_page'        => 1,
+                                    'post_status'           => ['inherit'],
+                                    'supplier_part_number'  => $item[$legend['supplier_part_number']],
+                                    'meta_query'            => [
+                                        'relation'              => 'AND',
+                                        [
+                                            'key'               => '_mos_file',
+                                            'value'             => TRUE
+                                        ],
+                                        [
+                                            'key'               => '_mos_file_attached',
+                                            'value'             => FALSE
+                                        ]
+                                    ],
+                                    's'                     => $item[$legend['supplier_part_number']]
+                                ];
+                                if( $data['imageSources'] != '' && 0 < count($data['imageSources']) ) :
+                                    foreach( $data['imageSources'] as $source ) :
+                                        $args['meta_query'][] = [
+                                            'key'       => '_mos_file_folder',
+                                            'value'     => $source
+                                        ];
+                                    endforeach;
+                                endif;
+
+                                add_filter('posts_where', __CLASS__ .'::searchSupplierPartNumber', 10, 2);
+                                $query = new WP_Query($args);
+                                remove_filter('posts_where', __CLASS__ .'::searchSupplierPartNumber', 10);
+
+                                if( $query->have_posts() ) :
+                                    while( $query->have_posts() ) :
+                                        $query->the_post();
+
+                                        $product->set_image_id(get_the_ID());
+                                        update_post_meta(get_the_ID(), '_mos_file_attached', TRUE);
+                                    endwhile;
+                                    wp_reset_postdata();
+                                endif;
+                            endif;
+
+                            // Set product description
+                            if( !empty($productDescription) && 
+                                $product->get_description() != $productDescription ) :    
+                                $product->set_description($productDescription);
+                            endif;
+
+                            // Set product attributes
+                            if( 0 < count($productAttrs) ) :
+                                $product->set_attributes($productAttrs);
+                            endif;
+
+                            // Update last import performed metadata
+                            $product->update_meta_data('_last_import_update', $lastImportPerformed);
+
+                            // Save
+                            $product->save();
+
+                            // Set product brand
+                            if( isset($brand) ) :
+                                wp_set_object_terms($product->get_id(), [$brand], 'pwb-brand');
+                            endif;
+
+                            $response['items'][] = [
+                                'categories'            => $product->get_category_ids(),
+                                'tags'                  => $product->get_tag_ids(),
+                                'brand'                 => isset($brand) ? $brand : 0,
+                                'id'                    => $product->get_id(),
+                                'title'                 => $product->get_name(),
+                                'sku'                   => $product->get_sku(),
+                                'short_description'     => $product->get_short_description(),
+                                'description'           => $product->get_description(),
+                                'regular_price'         => $product->get_regular_price(),
+                                'sale_price'            => $product->get_sale_price(),
+                                'stock'                 => $product->get_stock_quantity(),
+                                'attributes'            => $product->get_attributes(),
+                                'url'                   => $product->get_permalink(),
+                                'image'                 => $product->get_image_id() ? wp_get_attachment_image_url($product->get_image_id(), 'full') : wc_placeholder_img_src('full'),
+                                'edit_url'              => $product->get_id() ? esc_url_raw('post.php?post='. $product->get_id() .'&action=edit') : FALSE,
+                                'is_image'              => FALSE
+                            ];
+                        endif;
                     endif;
-
-                    $product = $productID ? wc_get_product($productID) : new WC_Product();
-                    $productDescription = '';
-                    $productCategories = [];
-                    $productTags = [];
-                    $productAttrs = [];
-			
-					if( $productID && $data_store->is_existing_sku($productID, $item[$legend['sku']]) ) :
-						$response['skipped'] = TRUE;
-						$response['items'][] = [
-							'categories'            => [],
-							'tags'                  => [],
-							'brand'                 => 0,
-							'id'                    => 0,
-							'title'                 => '',
-							'sku'                   => '',
-							'short_description'     => '',
-							'description'           => '',
-							'regular_price'         => 0,
-							'sale_price'            => 0,
-							'stock'                 => 0,
-							'attributes'            => '',
-							'url'                   => '',
-							'image'                 => '',
-							'edit_url'              => ''
-						];
-					else :
-						// Product category
-						if( isset($legend['category']) && 
-							!empty($item[$legend['category']]) ) :
-							$category = term_exists($item[$legend['category']], 'product_cat');
-
-							if( $category ) :
-								$category = intval($category['term_id']);
-							else :
-								$category = wp_insert_category([
-									'taxonomy'  => 'product_cat',
-									'cat_name'  => $item[$legend['category']]
-								]);
-							endif;
-
-							$productCategories[0] = $category;
-						endif;
-
-						// Product child category
-						if( isset($category) && 
-							isset($legend['category_child']) && 
-							!empty($item[$legend['category_child']]) ) :
-							$childCategory = term_exists($item[$legend['category_child']], 'product_cat', $category);
-
-							if( $childCategory ) :
-								$childCategory = intval($childCategory['term_id']);
-							else :
-								$childCategory = wp_insert_category([
-									'taxonomy'          => 'product_cat',
-									'cat_name'          => $item[$legend['category_child']],
-									'category_parent'   => $category
-								]);
-							endif;
-
-							unset($productCategories[0]);
-							$productCategories[0] = $childCategory;
-						endif;
-
-						// Product grandchild category
-						if( isset($category) && 
-							isset($childCategory) && 
-							isset($legend['category_grandchild']) && 
-							!empty($item[$legend['category_grandchild']]) ) :
-							$grandchildCategory = term_exists($item[$legend['category_grandchild']], 'product_cat', $childCategory);
-
-							if( $grandchildCategory ) :
-								$grandchildCategory = intval($grandchildCategory['term_id']);
-							else :
-								$grandchildCategory = wp_insert_category([
-									'taxonomy'          => 'product_cat',
-									'cat_name'          => $item[$legend['category_grandchild']],
-									'category_parent'   => $childCategory
-								]);
-							endif;
-
-							unset($productCategories[0]);
-							$productCategories[0] = $grandchildCategory;
-						endif;
-
-						// Product brand
-						if( isset($legend['pwb-brand']) && 
-							!empty($item[$legend['pwb-brand']]) ) :
-							$brand = term_exists($item[$legend['pwb-brand']], 'pwb-brand');
-
-							if( $brand ) :
-								$brand = intval($brand['term_id']);
-							else :
-								$brand = wp_insert_category([
-									'taxonomy'  => 'pwb-brand',
-									'cat_name'  => $item[$legend['pwb-brand']]
-								]);
-							endif;
-						endif;
-
-						// Product tags
-						if( (isset($legend['tag1']) && !empty($item[$legend['tag1']])) || 
-							(isset($legend['tag2']) && !empty($item[$legend['tag2']])) ) :
-							$tags = isset($item[$legend['tag1']]) ? explode(',', $item[$legend['tag1']]) : [];
-							$tags = isset($item[$legend['tag2']]) ? array_merge($tags, explode(',', $item[$legend['tag2']])) : $tags;
-
-							foreach( $tags as $tag ) :
-								$tagExists = term_exists($tag, 'product_tag');
-								if( $tagExists ) :
-									$productTags = array_merge($productTags, $tagExists);
-								else :
-									$productTags[] = wp_insert_category([
-										'taxonomy'  => 'product_tag',
-										'cat_name'  => $tag
-									]);
-								endif;
-							endforeach;
-						endif;
-
-						$product->set_category_ids($productCategories);
-						$product->set_tag_ids($productTags);
-
-						// Product title
-						if( isset($legend['title']) && 
-							!empty($item[$legend['title']]) &&
-							$product->get_name() != $item[$legend['title']] ) :
-							$product->set_name($item[$legend['title']]);
-						endif;
-
-						// Product slug
-						if( isset($legend['slug']) &&
-							!empty($item[$legend['slug']]) &&
-							$product->get_name() != $item[$legend['title']] ) :
-							$product->set_slug($item[$legend['slug']]);
-						endif;
-
-						// Product short description
-						if( isset($legend['description']) &&
-							!empty($item[$legend['description']]) && 
-							$product->get_short_description() != $item[$legend['description']] ) :
-							$product->set_short_description($item[$legend['description']]);
-						endif;
-
-						// Product sku
-						if( isset($legend['sku']) &&
-							!empty($item[$legend['sku']]) && 
-							$product->get_sku() != $item[$legend['sku']] ) :
-							$product->set_sku($item[$legend['sku']]);
-						endif;
-
-						// Product regular price
-						if( isset($legend['regular_price']) && 
-							!empty($item[$legend['regular_price']]) && 
-							$product->get_regular_price() != $item[$legend['regular_price']] ) :
-							$product->set_regular_price($item[$legend['regular_price']]);
-						endif;
-
-						// Product sale price
-						if( isset($legend['sale_price']) && 
-							!empty($item[$legend['sale_price']]) && 
-							$product->get_sale_price() != $item[$legend['sale_price']] ) :
-							$product->set_sale_price($item[$legend['sale_price']]);
-						endif;
-
-						// Product stock
-						if( isset($legend['stock']) && 
-							!empty($item[$legend['stock']]) && 
-							$product->get_stock_quantity() != $item[$legend['stock']] ) :
-							$product->set_stock_quantity($item[$legend['stock']]);
-						endif;
-
-						// Product tax class
-						if( isset($legend['tax_class']) && 
-							!empty($item[$legend['tax_class']]) ) :
-							$product->set_tax_class(self::addGST($item[$legend['tax_class']]));
-						endif;
-
-						// Product description : barcode
-						if( isset($legend['barcode']) && 
-							!empty($item[$legend['barcode']]) && 
-							$product->get_meta('_barcode') != $item[$legend['barcode']] ) :
-							$product->update_meta_data('_barcode', $item[$legend['barcode']]);
-						endif;
-
-						// Product description : inner barcode
-						if( isset($legend['inner_barcode']) && 
-							!empty($item[$legend['inner_barcode']]) && 
-							$product->get_meta('_inner_barcode') != $item[$legend['inner_barcode']] ) :
-							$product->update_meta_data('_inner_barcode', $item[$legend['inner_barcode']]);
-						endif;
-
-						// Product meta : _woo_uom_input
-						if( isset($legend['uom']) && 
-							!empty($item[$legend['uom']]) && 
-							$product->get_meta('_woo_uom_input') != $item[$legend['uom']] ) :
-							$product->update_meta_data('_woo_uom_input', $item[$legend['uom']]);
-
-							$productDescription .= '<p><strong>Each unit of this product is available in the quantity:</strong> '. $item[$legend['uom']] .'</p>';
-						endif;
-
-						// Prodcut attr : pa_ppu
-						if( isset($legend['ppu']) && 
-							!empty($item[$legend['ppu']]) ) :
-							$productAttrs[] = self::createAttribute('pa_ppu', [$item[$legend['ppu']]], 1, 1, 0);
-
-							$productDescription .= '<p><strong>Number of items per unit:</strong> '. $item[$legend['ppu']] .'</p>';
-
-							$product->update_meta_data('_ppu', $item[$legend['ppu']]);
-						endif;
-
-						// Product attr : pa_supplier-part-no
-						if( isset($legend['supplier_part_number']) && 
-							!empty($item[$legend['supplier_part_number']]) ) :
-							$product->update_meta_data('_supplier_part_number', $item[$legend['supplier_part_number']]);
-
-							$productAttrs[] = self::createAttribute('pa_supplier-part-no', [$item[$legend['supplier_part_number']]], 2, 0, 0);
-
-							// Get SPU
-							$delimiters = MOS_WC_Settings::getOption('delimiters');
-							$delimitersPattern = "/(";
-							if( $delimiters ) :
-								foreach( $delimiters as $delimiter ) :
-									$delimitersPattern .= "\\". $delimiter ."|";
-								endforeach;
-							endif;
-							$delimitersPattern = rtrim($delimitersPattern, "|") .")/";
-							$name = preg_split($delimitersPattern, $item[$legend['supplier_part_number']]);
-
-							if( MOS_WC_Settings::getOption('findFirst') == 'true' ) :
-								$name = $name[0];
-							endif;
-
-							$args = [
-								'post_type'             => 'attachment',
-								'posts_per_page'        => 1,
-								'post_status'           => ['inherit'],
-								'supplier_part_number'  => $item[$legend['supplier_part_number']],
-								'meta_query'            => [
-									'relation'              => 'AND',
-									[
-										'key'               => '_mos_file',
-										'value'             => TRUE
-									],
-									[
-										'key'               => '_mos_file_attached',
-										'value'             => FALSE
-									]
-								],
-								's'                     => $item[$legend['supplier_part_number']]
-							];
-							if( $data['imageSources'] != '' && 0 < count($data['imageSources']) ) :
-								foreach( $data['imageSources'] as $source ) :
-									$args['meta_query'][] = [
-										'key'       => '_mos_file_folder',
-										'value'     => $source
-									];
-								endforeach;
-							endif;
-
-							add_filter('posts_where', __CLASS__ .'::searchSupplierPartNumber', 10, 2);
-							$query = new WP_Query($args);
-							remove_filter('posts_where', __CLASS__ .'::searchSupplierPartNumber', 10);
-
-							if( $query->have_posts() ) :
-								while( $query->have_posts() ) :
-									$query->the_post();
-
-									$product->set_image_id(get_the_ID());
-									update_post_meta(get_the_ID(), '_mos_file_attached', TRUE);
-								endwhile;
-								wp_reset_postdata();
-							endif;
-						endif;
-
-						// Set product description
-						if( !empty($productDescription) && 
-							$product->get_description() != $productDescription ) :    
-							$product->set_description($productDescription);
-						endif;
-
-						// Set product attributes
-						if( 0 < count($productAttrs) ) :
-							$product->set_attributes($productAttrs);
-						endif;
-
-						// Update last import performed metadata
-						$product->update_meta_data('_last_import_update', $lastImportPerformed);
-
-						// Save
-						$product->save();
-
-						// Set product brand
-						if( isset($brand) ) :
-							wp_set_object_terms($product->get_id(), [$brand], 'pwb-brand');
-						endif;
-
-						$response['items'][] = [
-							'categories'            => $product->get_category_ids(),
-							'tags'                  => $product->get_tag_ids(),
-							'brand'                 => isset($brand) ? $brand : 0,
-							'id'                    => $product->get_id(),
-							'title'                 => $product->get_name(),
-							'sku'                   => $product->get_sku(),
-							'short_description'     => $product->get_short_description(),
-							'description'           => $product->get_description(),
-							'regular_price'         => $product->get_regular_price(),
-							'sale_price'            => $product->get_sale_price(),
-							'stock'                 => $product->get_stock_quantity(),
-							'attributes'            => $product->get_attributes(),
-							'url'                   => $product->get_permalink(),
-							'image'                 => $product->get_image_id() ? wp_get_attachment_image_url($product->get_image_id(), 'full') : wc_placeholder_img_src('full'),
-							'edit_url'              => $product->get_id() ? esc_url_raw('post.php?post='. $product->get_id() .'&action=edit') : FALSE
-						];
-					endif;
                 endforeach;
             endif;
 
@@ -622,7 +668,11 @@ if( !class_exists('MOS_WC_Handler') ) :
                 'post_type'         => 'product',
                 'posts_per_page'    => -1,
                 'meta_query'        => [
-                    'relation'          => 'AND',
+                    'relation'          => 'OR',
+                    [
+                        'key'           => '_last_import_update',
+                        'compare'       => 'NOT EXISTS'
+                    ],
                     [
                         'key'           => '_last_import_update',
                         'value'         => $lastImportPerformed,
@@ -658,7 +708,12 @@ if( !class_exists('MOS_WC_Handler') ) :
 
             if( 0 < count($data['items']) ) :
                 foreach( $data['items'] as $item ) :
-                    wp_delete_post($item, TRUE);
+                    $product = wc_get_product($item);
+
+                    if( $product ) :
+                        wp_delete_attachment($product->get_image_id(), TRUE);
+                        wp_delete_post($product->get_id(), TRUE);
+                    endif;
                 endforeach;
             endif;
             

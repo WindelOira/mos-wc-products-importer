@@ -126,7 +126,7 @@
                     </v-btn>
                     <v-btn 
                         v-if="models.uploaded.active.status == 'trash'" 
-                        @click="restoreFile(models.uploaded.selected)" 
+                        @click="bulkRestore()" 
                         :disabled="!models.uploaded.selected.length" 
                         color="green" 
                         text 
@@ -422,8 +422,6 @@
                 }
             },
             deleteFile(id, permanent = false) {
-                // this.models.uploaded.loading = true
-
                 axios({
                     url     : this.settings.actions.post,
                     method  : 'POST',
@@ -501,8 +499,6 @@
                 })
             },
             restoreFile(id) {
-                this.models.uploaded.loading = true
-
                 axios({
                     url     : this.settings.actions.post,
                     method  : 'POST',
@@ -537,6 +533,52 @@
 
                             this.models.uploaded.selected = []
                             this.models.uploaded.loading = false
+                        }
+                    }
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            bulkRestore() {
+                axios({
+                    url     : this.settings.actions.post,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        nonce       : this.settings.nonce,
+                        action      : 'ajaxRestoreUpload',
+                        data        : {
+                            id          : this.models.uploaded.selected.slice((this.models.batch - 1), this.models.batch)
+                        }
+                    })
+                }).then(response => {
+                    if( response.data.result ) {
+                        if( 0 < response.data.files.length ) {
+                            response.data.files.forEach(file => {
+                                this.alerts.success.push({
+                                    id          : file.id,
+                                    text        : file.file.title +' has been restored.'
+                                })
+
+                                if( this.models.uploaded.active.status == 'inherit' ) {
+                                    this.models.uploaded.items.push(file)
+                                } else {
+                                    this.models.uploaded.items = this.models.uploaded.items.filter(item => {
+                                        return item.id == file.id ? false : true
+                                    })
+                                }
+
+                                this.alerts.success = this.alerts.success.filter(success => {
+                                    return success.id == file.id && success.restore ? false : true
+                                })
+                            })
+
+                            if( this.models.batch < this.models.uploaded.selected.length ) {
+                                this.models.batch += 1
+                                this.bulkRestore()
+                            } else {
+                                this.models.batch = 1
+                                this.models.uploaded.selected = []
+                            }
                         }
                     }
                 }).catch(error => {

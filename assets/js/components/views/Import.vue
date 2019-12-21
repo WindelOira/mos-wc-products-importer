@@ -338,6 +338,10 @@
             },
             generatePreview(evt) {
                 this.alerts.errors = []
+
+                if( this.alerts.errors.length > 2 ) {
+                    this.alerts.errors.shift()
+                }
                 
                 if( !this.models.file ) {
                     this.alerts.errors.push({text: 'Please select file.'})

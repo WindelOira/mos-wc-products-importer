@@ -436,6 +436,10 @@
                 }).then(response => {
                     if( response.data.result ) {
                         if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
                             response.data.files.forEach(file => {
                                 this.alerts.success.push({
                                     id          : !permanent ? file.id : false,
@@ -472,6 +476,10 @@
                 }).then(response => {
                     if( response.data.result ) {
                         if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
                             response.data.files.forEach(file => {
                                 this.alerts.success.push({
                                     id          : !permanent ? file.id : false,
@@ -512,6 +520,10 @@
                 }).then(response => {
                     if( response.data.result ) {
                         if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
                             response.data.files.forEach(file => {
                                 this.alerts.success.push({
                                     id          : file.id,
@@ -553,6 +565,10 @@
                 }).then(response => {
                     if( response.data.result ) {
                         if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
                             response.data.files.forEach(file => {
                                 this.alerts.success.push({
                                     id          : file.id,

@@ -174,7 +174,7 @@
                     v-if="!models.uploaded.loading" 
                     class="mos-uploaded-files">
                     <v-col 
-                        v-for="(item, key) in models.uploaded.items.slice(((models.page * 20) - 20), models.page == 1 ? 20 : (models.page * 20))" 
+                        v-for="(item, key) in models.uploaded.items" 
                         :key="'file-'+ key" 
                         cols="12" 
                         sm="6" 
@@ -237,8 +237,9 @@
 
                 <v-pagination 
                     v-if="0 < models.uploaded.items.length"
-                    v-model="models.page"
-                    :length="Math.ceil(parseInt(models.uploaded.items.length) / 20)" 
+                    v-model="models.page" 
+                    @input="getUploadedFiles(models.uploaded.active.status, models.page)"
+                    :length="Math.ceil(parseInt(models.uploaded.total) / 20)" 
                     :total-visible="5"></v-pagination>
             </v-container>
         </v-card>
@@ -278,6 +279,7 @@
                         active          : {
                             status          : 'inherit'
                         },
+                        total           : 0,
                         items           : []
                     }
                 }
@@ -293,7 +295,7 @@
                     })
                 }
             },
-            getUploadedFiles(status = 'inherit') {
+            getUploadedFiles(status = 'inherit', page = 1) {
                 this.models.selectAll = false
                 this.models.uploaded.loading = true
                 this.models.uploaded.selected = []
@@ -304,10 +306,12 @@
                     data    : Qs.stringify({
                         nonce       : this.settings.nonce,
                         action      : 'ajaxGetUploads',
+                        page        : page,
                         status      : status
                     })
                 }).then(response => {
                     if( response.data.result ) {
+                        this.models.uploaded.total = response.data.total
                         this.models.uploaded.items = response.data.files
 
                         this.models.uploaded.loading = false
@@ -401,7 +405,10 @@
                     // Uploaded successfully
                     if( newFile.success !== oldFile.success ) {
                         if( newFile.response.file.files.length ) {
-                            this.models.uploaded.items = this.models.uploaded.items.concat(newFile.response.file.files)
+                            this.models.uploaded.total += 1
+                            if( this.models.uploaded.items.length < 20 ) {
+                                this.models.uploaded.items = this.models.uploaded.items.concat(newFile.response.file.files)
+                            }
                         }
                     }
                 }

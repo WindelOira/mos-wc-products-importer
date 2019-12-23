@@ -28,13 +28,14 @@ if( !class_exists('MOS_WC_Files') ) :
          * 
          * @return array
          */
-        public static function getFileIDs($attached = FALSE, $status = 'inherit') {
+        public static function getFileIDs($attached = FALSE, $status = 'inherit', $perPage = FALSE, $page = FALSE) {
             $fileIDs = [];
 
             $args = [
                 'post_type'         => 'attachment',
                 'post_status'       => $status,
-                'posts_per_page'    => -1,
+                'posts_per_page'    => $perPage === FALSE ? -1 : intval($perPage),
+                'fields'            => 'ids',
                 'meta_query'        => [
                     'relation'          => 'AND',
                     [
@@ -48,6 +49,10 @@ if( !class_exists('MOS_WC_Files') ) :
                 ]
             ];
 
+            if( $page !== FALSE ) :
+                $args['paged'] = $page;
+            endif;
+
             if( $attached ) :
                 $args['meta_query'][1]['value'] = 1;
             endif;
@@ -55,7 +60,7 @@ if( !class_exists('MOS_WC_Files') ) :
             $query = new WP_Query($args);
             wp_reset_postdata();
 
-            return wp_list_pluck($query->posts, 'ID');
+            return $query->posts;
         }
 
         /**
@@ -331,9 +336,10 @@ if( !class_exists('MOS_WC_Files') ) :
 
             $response = [
                 'result'    => FALSE,
+                'total'     => count(self::getFileIDs()),
                 'files'     => []
             ];
-            $files = self::getFileIDs(FALSE, $_POST['status']);
+            $files = self::getFileIDs(FALSE, $_POST['status'], 20, intval($_POST['page']));
 
             if( 0 < count($files) ) :
                 $response['result'] = TRUE;

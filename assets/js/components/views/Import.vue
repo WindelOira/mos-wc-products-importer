@@ -31,11 +31,6 @@
                             :label="'Skip data mapping'" 
                             hide-details></v-checkbox>
 
-                        <v-checkbox 
-                            v-model="models.skipImageSource" 
-                            :label="'Skip image source'" 
-                            hide-details></v-checkbox>
-
                         <v-btn 
                             color="primary" 
                             class="mt-7 mb-1" 
@@ -112,53 +107,13 @@
                         class="mt-3 mr-2 mb-1">Return</v-btn>
 
                     <v-btn
-                        @click="stepTo(4); getImageFolders()" 
+                        @click="doImport(4)" 
                         color="primary" 
-                        class="mt-3 mb-1">Next</v-btn>
+                        class="mt-3 mb-1">Import</v-btn>
                 </v-stepper-content>
             </v-stepper-items>
 
-            <v-stepper-content step="4">    
-                <v-row>
-                    <v-col 
-                        v-for="(folder, key) in data.imagesSource" 
-                        :key="key" 
-                        cols="12" 
-                        sm="6" 
-                        md="4" 
-                        lg="3" 
-                        class="pt-0">
-                        <v-card 
-                            @click="(-1 < data.sources.indexOf(folder)) ? data.sources.splice(data.sources.indexOf(folder), 1) : data.sources.push(folder)" 
-                            class="d-flex align-center">
-                            <v-btn 
-                                :color="(-1 < data.sources.indexOf(folder)) ? 'green' : 'grey lighten-1'" 
-                                icon 
-                                dark 
-                                absolute 
-                                top 
-                                right>
-                                <v-icon>{{ (-1 < data.sources.indexOf(folder)) ? 'mdi-check-circle' : 'mdi-check-circle-outline' }}</v-icon>
-                            </v-btn>
-                            <v-card-text 
-                                class="py-6">
-                                <v-icon class="mr-3">mdi-folder</v-icon> {{ folder }}
-                            </v-card-text>    
-                        </v-card>
-                    </v-col>
-                </v-row>
-
-                <v-btn 
-                    @click="stepTo(3)"
-                    class="mt-3 mr-2 mb-1">Return</v-btn>
-
-                <v-btn
-                    @click="doImport(5)" 
-                    color="primary" 
-                    class="mt-3 mb-1">Import</v-btn>
-            </v-stepper-content>
-
-            <v-stepper-content step="5" class="text-center">
+            <v-stepper-content step="4" class="text-center">
                 <div v-if="data.cleaningUp">
                     <v-progress-circular
                         :value="((data.unimported.deleted / data.unimported.items.length) * 100)" 
@@ -237,15 +192,13 @@
                         {position: 1, text: 'Import File'},
                         {position: 2, text: 'Preview'},
                         {position: 3, text: 'Map Fields'},
-                        {position: 4, text: 'Images Source'},
-                        {position: 5, text: 'Importing'},
-                        {position: 6, text: 'Finished'}
+                        {position: 4, text: 'Importing'},
+                        {position: 5, text: 'Finished'}
                     ]
                 },
                 models  : {
                     file                : null,
                     skipMapping         : true,
-                    skipImageSource     : true,
                     select              : null
                 },
                 data    : {
@@ -397,17 +350,14 @@
                     reader.onloadend = function() {
                         instance.data.loading = false
 
-                        if( instance.models.skipMapping && instance.models.skipImageSource ) {
+                        if( instance.models.skipMapping ) {
                             if( !instance.data.hasImageLinks ) {
                                 instance.data.importProducts = true
-                                instance.doImport(5)
+                                instance.doImport(4)
                             } else {
                                 instance.data.importProducts = false
-                                instance.doImport(5)
+                                instance.doImport(4)
                             }
-                        } else if( instance.models.skipMapping && !instance.models.skipImageSource ) {
-                            instance.getImageFolders()
-                            instance.stepTo(4)
                         } else {
                             instance.stepTo(2)
                         }
@@ -428,17 +378,14 @@
                                 this.data.hasImageLinks = true
                             }
 
-                            if( this.models.skipMapping && this.models.skipImageSource ) {
+                            if( this.models.skipMapping ) {
                                 if( !this.data.hasImageLinks ) {
                                     instance.data.importProducts = true
-                                    this.doImport(5)
+                                    this.doImport(4)
                                 } else {
                                     instance.data.importProducts = false
-                                    this.doImport(5)
+                                    this.doImport(4)
                                 }
-                            } else if( this.models.skipMapping && !this.models.skipImageSource ) {
-                                this.getImageFolders()
-                                this.stepTo(4)
                             } else {
                                 this.stepTo(2)
                             }
@@ -541,30 +488,6 @@
 
                         this.stepTo(6)
                     }
-                }).catch(error => {
-                    console.log(error)
-                })
-            },
-            getImageFolders() {
-                this.data.loading = true
-
-                axios({
-                    url     : mosWC.ajax.url,
-                    method  : 'POST',
-                    data    : Qs.stringify({
-                        action      : 'ajaxGetImageFolders',
-                        data        : {
-                            nonce       : mosWC.ajax.nonce
-                        }
-                    })
-                }).then(response => {
-                    if( response.data.result ) {
-                        this.data.imagesSource = response.data.folders
-                    } else {
-                        this.doImport(5)
-                    }
-
-                    this.data.loading = false
                 }).catch(error => {
                     console.log(error)
                 })

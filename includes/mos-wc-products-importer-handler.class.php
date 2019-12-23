@@ -13,8 +13,6 @@ if( !class_exists('MOS_WC_Handler') ) :
             add_action('init', __CLASS__ .'::createAttributes');
             add_action('wp_ajax_nopriv_getProductTaxonomies', __CLASS__ .'::getProductTaxonomies');
             add_action('wp_ajax_getProductTaxonomies', __CLASS__ .'::getProductTaxonomies');
-            add_action('wp_ajax_nopriv_ajaxGetImageFolders', __CLASS__ .'::ajaxGetImageFolders');
-            add_action('wp_ajax_ajaxGetImageFolders', __CLASS__ .'::ajaxGetImageFolders');
             add_action('wp_ajax_nopriv_ajaxImport', __CLASS__ .'::ajaxImport');
             add_action('wp_ajax_ajaxImport', __CLASS__ .'::ajaxImport');
             add_action('wp_ajax_nopriv_ajaxGetUnimported', __CLASS__ .'::ajaxGetUnimported');
@@ -120,25 +118,29 @@ if( !class_exists('MOS_WC_Handler') ) :
          * @return object|bool
          */
         public static function getProductBy($key = 'title', $value, $isMeta = FALSE) {
-            global $wpdb;
-
-            $args = "SELECT ID FROM ". $wpdb->posts;
+            $args = [
+                'post_type'         => 'product',
+                'posts_per_page'    => 1,
+                'post_status'       => 'publish',
+                'fields'            => 'ids'
+            ];
 
             if( $isMeta ) :
-                $args .= " INNER JOIN ". $wpdb->postmeta;
-                $args .= " ON (". $wpdb->posts .".ID = ". $wpdb->postmeta .".post_id)";
-                $args .= " WHERE ". $wpdb->posts .".post_type = 'product'";
-                $args .= " AND ". $wpdb->posts .".post_status = 'publish'";
-                $args .= " AND ". $wpdb->postmeta .".meta_value = '". $value ."'";
+                $args['meta_query'] = [
+                    'relation'      => 'AND',
+                    [
+                        'key'           => $key,
+                        'value'         => $value
+                    ]
+                ];
             elseif( $key == 'title' ) :
-                $args .= " WHERE ". $wpdb->posts .".post_type = 'product'";
-                $args .= " AND ". $wpdb->posts .".post_status = 'publish'";
-                $args .= " AND ". $wpdb->posts .".post_title = '". $value ."'";
+                $args['s'] = $value;
             endif;
-            
-            $results = $wpdb->get_results($args);
 
-            return $results ? $results[0]->ID : FALSE;
+            $query = new WP_Query($args);
+            wp_reset_postdata();
+            
+            return 0 < count($query->posts) ? $query->posts[0] : FALSE;
         }
         
 
@@ -217,28 +219,6 @@ if( !class_exists('MOS_WC_Handler') ) :
             endif;
 
             return $taxClass;
-        }
-
-        /**
-         * Ajax get image folders
-         * 
-         * 
-         * @return json
-         */
-        public static function ajaxGetImageFolders() {
-            if( !defined('DOING_AJAX') && !DOING_AJAX )
-                die();
-
-            if( !wp_verify_nonce($_POST['data']['nonce'], MOS_WC_NONCE_KEY) )
-                die();
-
-            $folders = MOS_WC_Files::getFolders();
-            $response = [
-                'result'    => 0 < count($folders),
-                'folders'   => $folders
-            ];
-
-            wp_send_json($response);
         }
 
         /**

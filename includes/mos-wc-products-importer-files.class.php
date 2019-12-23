@@ -28,13 +28,14 @@ if( !class_exists('MOS_WC_Files') ) :
          * 
          * @return array
          */
-        public static function getFileIDs($attached = FALSE, $status = 'inherit', $folder = FALSE) {
+        public static function getFileIDs($attached = FALSE, $status = 'inherit', $perPage = FALSE, $page = FALSE) {
             $fileIDs = [];
 
             $args = [
                 'post_type'         => 'attachment',
                 'post_status'       => $status,
-                'posts_per_page'    => -1,
+                'posts_per_page'    => $perPage === FALSE ? -1 : intval($perPage),
+                'fields'            => 'ids',
                 'meta_query'        => [
                     'relation'          => 'AND',
                     [
@@ -42,27 +43,24 @@ if( !class_exists('MOS_WC_Files') ) :
                         'value'         => 1
                     ],
                     [
-                        'key'       => '_mos_file_attached',
-                        'value'     => ''
+                        'key'           => '_mos_file_attached',
+                        'value'         => ''
                     ]
                 ]
             ];
+
+            if( $page !== FALSE ) :
+                $args['paged'] = $page;
+            endif;
 
             if( $attached ) :
                 $args['meta_query'][1]['value'] = 1;
             endif;
 
-            if( $folder !== FALSE ) :
-                $args['meta_query'][] = [
-                    'key'       => '_mos_file_folder',
-                    'value'     => $folder
-                ];
-            endif;
-
             $query = new WP_Query($args);
             wp_reset_postdata();
 
-            return wp_list_pluck($query->posts, 'ID');
+            return $query->posts;
         }
 
         /**
@@ -110,33 +108,6 @@ if( !class_exists('MOS_WC_Files') ) :
             else :
                 return FALSE;
             endif;
-        }
-
-        /**
-         * Get folders.
-         * 
-         * @return array 
-         */
-        public static function getFolders() {
-            global $wpdb;
-
-            $folders = [];
-
-            $args = "SELECT meta_value FROM ". $wpdb->postmeta;
-            $args .= " WHERE ". $wpdb->postmeta .".meta_key = '_mos_file_folder'";
-            $args .= " AND NOT ". $wpdb->postmeta .".meta_value = ''";
-
-            $results = $wpdb->get_results($args);
-
-            if( $results ) :
-                foreach( $results as $result ) :
-                    if( !in_array($result->meta_value, $folders) ) :
-                        $folders[] = $result->meta_value;
-                    endif;
-                endforeach;
-            endif;
-
-            return $folders;
         }
 
         /**
@@ -302,7 +273,6 @@ if( !class_exists('MOS_WC_Files') ) :
                     'meta_input'        => [
                         '_mos_file'             => TRUE,
                         '_mos_file_attached'    => $attached,
-                        '_mos_file_folder'      => $folder,
                         '_mos_file_spu'         => $spu
                     ]
                 ];
@@ -339,7 +309,6 @@ if( !class_exists('MOS_WC_Files') ) :
                 'result'    => FALSE,
                 'file'      => [
                     'id'        => FALSE,
-                    'folder'    => '',
                     'files'     => []
                 ]
             ];
@@ -367,23 +336,18 @@ if( !class_exists('MOS_WC_Files') ) :
 
             $response = [
                 'result'    => FALSE,
+                'total'     => count(self::getFileIDs()),
                 'files'     => []
             ];
-            $files = self::getFileIDs(FALSE, $_POST['status']);
+            $files = self::getFileIDs(FALSE, $_POST['status'], 20, intval($_POST['page']));
 
             if( 0 < count($files) ) :
                 $response['result'] = TRUE;
                 foreach( $files as $key => $file ) :
                     $response['files'][$key] = [
                         'id'        => $file,
-                        'folder'    => get_post_meta($file, '_mos_file_folder', TRUE),
-                        'file'      => NULL
+                        'file'      => self::getFile($file)
                     ];
-
-                    // if( get_post_meta($file, '_mos_file_folder', TRUE) == '' ) :
-                        $response['files'][$key]['folder'] = '';
-                        $response['files'][$key]['file'] = self::getFile($file);
-                    // endif;
                 endforeach;
             endif;
             wp_send_json($response);
@@ -413,7 +377,6 @@ if( !class_exists('MOS_WC_Files') ) :
                 if( $mosFile = self::getFile($file) ) :
                     $response['files'][] = [
                         'id'        => $file,
-                        'folder'    => '',
                         'file'      => $mosFile
                     ];
 
@@ -454,7 +417,6 @@ if( !class_exists('MOS_WC_Files') ) :
                     $response['result'] = TRUE;
                     $response['files'][] = [
                         'id'        => $file,
-                        'folder'    => '',
                         'file'      => self::getFile($file)
                     ];
                 endif;

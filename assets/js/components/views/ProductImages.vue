@@ -75,32 +75,20 @@
                     :flat="false"
                     :extension-height="40" 
                     class="mb-5">
-                    <v-btn 
-                        v-if="!models.uploaded.loading && models.uploaded.active.folder != ''" 
-                        @click="getUploadedFiles('', models.uploaded.active.status)" 
-                        icon>
-                        <v-icon>mdi-arrow-left</v-icon>
-                    </v-btn>
 
-                    <v-toolbar-title>
-                        Uploaded Images 
-                        <span 
-                            v-if="models.uploaded.active.folder != ''">
-                            <v-icon>mdi-chevron-right</v-icon> {{ models.uploaded.active.folder }}
-                        </span>
-                    </v-toolbar-title>
+                    <v-toolbar-title>Uploaded Images </v-toolbar-title>
 
                     <v-spacer></v-spacer>
                     <v-spacer></v-spacer>
 
                     <v-btn
-                        @click="getUploadedFiles('', 'inherit')" 
+                        @click="getUploadedFiles()" 
                         :text="models.uploaded.active.status == 'inherit' ? false : true" 
                         color="success" 
                         small 
                         class="mr-1">Published</v-btn>
                     <v-btn 
-                        @click="getUploadedFiles('', 'trash')" 
+                        @click="getUploadedFiles('trash')" 
                         :text="models.uploaded.active.status == 'trash' ? false : true" 
                         color="error" 
                         small>Trashed</v-btn>
@@ -119,27 +107,30 @@
                         v-if="models.uploaded.active.status == 'inherit'"
                         @click="models.showUploader = !models.showUploader" 
                         color="primary" 
-                        text small 
+                        text 
+                        small 
                         class="mr-1">
                         <v-icon 
                             small 
                             class="mr-1">mdi-upload</v-icon> Upload Files
                     </v-btn>
                     <v-btn 
-                        @click="deleteFile(models.uploaded.selected, models.uploaded.active.status == 'inherit' ? false : true)" 
+                        @click="bulkDelete(models.uploaded.active.status == 'inherit' ? false : true)" 
                         :disabled="!models.uploaded.selected.length"
                         color="error" 
-                        text small>
+                        text 
+                        small>
                         <v-icon
                             small 
                             class="mr-1">mdi-delete-outline</v-icon> Bulk Delete
                     </v-btn>
                     <v-btn 
                         v-if="models.uploaded.active.status == 'trash'" 
-                        @click="restoreFile(models.uploaded.selected)" 
+                        @click="bulkRestore()" 
                         :disabled="!models.uploaded.selected.length" 
                         color="green" 
-                        text small>
+                        text 
+                        small>
                         <v-icon 
                             small 
                             class="mr-1">mdi-restore</v-icon> Bulk Restore
@@ -172,68 +163,19 @@
                     color="green" 
                     class="mb-4"></v-progress-linear>
 
+                <v-switch 
+                    v-model="models.selectAll"
+                    v-if="!models.uploaded.loading && 0 < models.uploaded.items.length" 
+                    @change="selectAll()" 
+                    class="ma-2" 
+                    :label="0 < models.selectAll ? 'Deselect all' : 'Select all'"></v-switch>
+
                 <v-row
                     v-if="!models.uploaded.loading" 
                     class="mos-uploaded-files">
                     <v-col 
-                        v-for="(folder, key) in models.uploaded.folders" 
-                        :key="'folder-'+ key" 
-                        cols="12" 
-                        sm="6" 
-                        md="4" 
-                        lg="3" 
-                        class="pt-0">
-                        <v-card 
-                            @click="0 <= models.uploaded.selected.indexOf(folder.id) ? models.uploaded.selected.splice(models.uploaded.selected.indexOf(folder.id), 1) : models.uploaded.selected.push(folder.id)" 
-                            :color="0 <= models.uploaded.selected.indexOf(folder.id) ? 'grey lighten-3' : ''">
-                            <v-card-text>
-                                <v-row 
-                                    justify="space-between">
-                                    <v-col 
-                                        cols="auto" 
-                                        class="pt-2 pb-1">
-                                        <v-icon 
-                                            v-if="0 <= models.uploaded.selected.indexOf(folder.id)" 
-                                            color="green"
-                                            small 
-                                            class="mr-1 ml-n2">mdi-check-circle</v-icon>
-                                        <v-icon class="mr-3">mdi-folder</v-icon> 
-                                        <span class="file-name">{{ folder.folder }}</span>
-                                    </v-col>
-
-                                    <v-col
-                                        cols="auto"
-                                        class="text-center pl-0 pt-1 pb-0">
-                                        <v-btn 
-                                            v-if="0 <= models.uploaded.selected.indexOf(folder.id)" 
-                                            @click.stop="deleteFile(folder.id, models.uploaded.active.status == 'trash' ? true : false)" 
-                                            color="red" 
-                                            fab x-small dark>
-                                            <v-icon v-if="models.uploaded.active.status == 'inherit'">mdi-delete-outline</v-icon>
-                                            <v-icon v-else>mdi-delete-forever-outline</v-icon>
-                                        </v-btn>
-                                        <v-btn 
-                                            v-if="models.uploaded.active.status == 'trash'" 
-                                            @click.stop="restoreFile(folder.id)" 
-                                            color="green" 
-                                            fab x-small dark 
-                                            class="ml-1">
-                                            <v-icon>mdi-restore</v-icon>
-                                        </v-btn>
-                                        <v-btn 
-                                            v-if="models.uploaded.active.status == 'inherit'" 
-                                            @click.stop="getUploadedFiles(folder.folder)" 
-                                            icon>
-                                            <v-icon>mdi-chevron-right</v-icon>
-                                        </v-btn>
-                                    </v-col>
-                                </v-row>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                    <v-col 
                         v-for="(item, key) in models.uploaded.items" 
-                        :key="'file-'+ item.id" 
+                        :key="'file-'+ key" 
                         cols="12" 
                         sm="6" 
                         md="4" 
@@ -287,11 +229,18 @@
                 </v-row>
 
                 <v-row 
-                    v-if="(0 == models.uploaded.folders.length && 0 == models.uploaded.items.length) && !models.uploaded.loading">
+                    v-if="0 == models.uploaded.items.length && !models.uploaded.loading">
                     <v-col 
                         cols="12" 
                         class="text-center">No files found.</v-col>
                 </v-row>
+
+                <v-pagination 
+                    v-if="0 < models.uploaded.items.length"
+                    v-model="models.page" 
+                    @input="getUploadedFiles(models.uploaded.active.status, models.page)"
+                    :length="Math.ceil(parseInt(models.uploaded.total) / 20)" 
+                    :total-visible="5"></v-pagination>
             </v-container>
         </v-card>
     </div>
@@ -318,24 +267,36 @@
                 },
                 models      : {
                     showUploader    : false,
+                    selectAll       : false,
                     updateProducts  : true,
                     search          : '',
                     files           : [],
+                    page            : 1,
+                    batch           : 1,
                     uploaded        : {
                         loading         : true,
                         selected        : [],
                         active          : {
-                            folder          : '',
                             status          : 'inherit'
                         },
-                        folders         : [],
+                        total           : 0,
                         items           : []
                     }
                 }
             }
         },
         methods     : {
-            getUploadedFiles(folder = '', status = 'inherit') {
+            selectAll() {
+                if( 0 < this.models.uploaded.selected.length ) {
+                    this.models.uploaded.selected = []
+                } else {
+                    this.models.uploaded.items.forEach(item => {
+                        this.models.uploaded.selected.push(item.id)
+                    })
+                }
+            },
+            getUploadedFiles(status = 'inherit', page = 1) {
+                this.models.selectAll = false
                 this.models.uploaded.loading = true
                 this.models.uploaded.selected = []
 
@@ -345,25 +306,19 @@
                     data    : Qs.stringify({
                         nonce       : this.settings.nonce,
                         action      : 'ajaxGetUploads',
-                        folder      : folder,
+                        page        : page,
                         status      : status
                     })
                 }).then(response => {
                     if( response.data.result ) {
-                        this.models.uploaded.folders = response.data.files.filter(file => {
-                            return file.folder != ''
-                        })
-                        this.models.uploaded.items = response.data.files.filter(file => {
-                            return file.folder == ''
-                        })
+                        this.models.uploaded.total = response.data.total
+                        this.models.uploaded.items = response.data.files
 
                         this.models.uploaded.loading = false
                     } else {
-                        this.models.uploaded.folders = []
                         this.models.uploaded.items = []
                     }
 
-                    this.models.uploaded.active.folder = folder
                     this.models.uploaded.active.status = status
                     this.models.uploaded.loading = false
                 }).catch(error => {
@@ -450,10 +405,9 @@
                     // Uploaded successfully
                     if( newFile.success !== oldFile.success ) {
                         if( newFile.response.file.files.length ) {
-                            if( newFile.response.file.folder == '' ) {
+                            this.models.uploaded.total += 1
+                            if( this.models.uploaded.items.length < 20 ) {
                                 this.models.uploaded.items = this.models.uploaded.items.concat(newFile.response.file.files)
-                            } else {
-                                this.models.uploaded.folders = this.models.uploaded.folders.concat(newFile.response.file)
                             }
                         }
                     }
@@ -475,8 +429,6 @@
                 }
             },
             deleteFile(id, permanent = false) {
-                this.models.uploaded.loading = true
-
                 axios({
                     url     : this.settings.actions.post,
                     method  : 'POST',
@@ -491,6 +443,10 @@
                 }).then(response => {
                     if( response.data.result ) {
                         if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
                             response.data.files.forEach(file => {
                                 this.alerts.success.push({
                                     id          : !permanent ? file.id : false,
@@ -498,9 +454,6 @@
                                     restore     : true
                                 })
                                 
-                                this.models.uploaded.folders = this.models.uploaded.folders.filter(folder => {
-                                    return folder.id == file.id ? false : true
-                                })
                                 this.models.uploaded.items = this.models.uploaded.items.filter(item => {
                                     return item.id == file.id ? false : true
                                 })
@@ -515,9 +468,52 @@
                     console.log(error)
                 })
             },
-            restoreFile(id) {
-                this.models.uploaded.loading = true
+            bulkDelete(permanent = false) {
+                axios({
+                    url     : this.settings.actions.post,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        nonce       : this.settings.nonce,
+                        action      : 'ajaxDeleteUpload',
+                        data        : {
+                            id          : this.models.uploaded.selected.slice((this.models.batch - 1), this.models.batch),
+                            permanent   : permanent
+                        }
+                    })
+                }).then(response => {
+                    if( response.data.result ) {
+                        if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
+                            response.data.files.forEach(file => {
+                                this.alerts.success.push({
+                                    id          : !permanent ? file.id : false,
+                                    text        : !permanent ? file.file.title +' has been moved to trash.' : file.file.title +' has been deleted permanently.',
+                                    restore     : true
+                                })
+                                
+                                this.models.uploaded.items = this.models.uploaded.items.filter(item => {
+                                    return item.id == file.id ? false : true
+                                })
+                            })
 
+                            if( this.models.batch < this.models.uploaded.selected.length ) {
+                                this.models.batch += 1
+                                this.bulkDelete(permanent)
+                            } else {
+                                this.models.batch = 1
+                                this.models.uploaded.selected = []
+                            }
+                        }
+                    }
+                    
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            restoreFile(id) {
                 axios({
                     url     : this.settings.actions.post,
                     method  : 'POST',
@@ -531,6 +527,10 @@
                 }).then(response => {
                     if( response.data.result ) {
                         if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
                             response.data.files.forEach(file => {
                                 this.alerts.success.push({
                                     id          : file.id,
@@ -540,9 +540,6 @@
                                 if( this.models.uploaded.active.status == 'inherit' ) {
                                     this.models.uploaded.items.push(file)
                                 } else {
-                                    this.models.uploaded.folders = this.models.uploaded.folders.filter(folder => {
-                                        return folder.id == file.id
-                                    })
                                     this.models.uploaded.items = this.models.uploaded.items.filter(item => {
                                         return item.id == file.id ? false : true
                                     })
@@ -555,6 +552,56 @@
 
                             this.models.uploaded.selected = []
                             this.models.uploaded.loading = false
+                        }
+                    }
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            bulkRestore() {
+                axios({
+                    url     : this.settings.actions.post,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        nonce       : this.settings.nonce,
+                        action      : 'ajaxRestoreUpload',
+                        data        : {
+                            id          : this.models.uploaded.selected.slice((this.models.batch - 1), this.models.batch)
+                        }
+                    })
+                }).then(response => {
+                    if( response.data.result ) {
+                        if( 0 < response.data.files.length ) {
+                            if( this.alerts.success.length > 2 ) {
+                                this.alerts.success.shift()
+                            }
+                            
+                            response.data.files.forEach(file => {
+                                this.alerts.success.push({
+                                    id          : file.id,
+                                    text        : file.file.title +' has been restored.'
+                                })
+
+                                if( this.models.uploaded.active.status == 'inherit' ) {
+                                    this.models.uploaded.items.push(file)
+                                } else {
+                                    this.models.uploaded.items = this.models.uploaded.items.filter(item => {
+                                        return item.id == file.id ? false : true
+                                    })
+                                }
+
+                                this.alerts.success = this.alerts.success.filter(success => {
+                                    return success.id == file.id && success.restore ? false : true
+                                })
+                            })
+
+                            if( this.models.batch < this.models.uploaded.selected.length ) {
+                                this.models.batch += 1
+                                this.bulkRestore()
+                            } else {
+                                this.models.batch = 1
+                                this.models.uploaded.selected = []
+                            }
                         }
                     }
                 }).catch(error => {

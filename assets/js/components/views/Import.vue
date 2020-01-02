@@ -120,7 +120,11 @@
                         :size="150"
                         :width="20"
                         color="orange"></v-progress-circular>
-                    <h3 class="mb-0" v-if="data.cleaningUp">Cleaning up...</h3>
+                    <h3 class="mb-0" v-if="data.cleaningUp">
+                        <span v-if="!data.unimported.deletedStatus.products">Cleaning up products</span>
+                        <span v-else-if="data.unimported.deletedStatus.products && !data.unimported.deletedStatus.categories">Cleaning up product categories</span>
+                        <span v-else-if="data.unimported.deletedStatus.products && data.unimported.deletedStatus.categories && !data.unimported.deletedStatus.brands">Cleaning up product brands</span>
+                    </h3>
                 </div>
 
                 <div v-else>
@@ -236,8 +240,21 @@
                     },
                     unimported      : {
                         items           : [],
-                        batch           : 1,
-                        deleted         : 0
+                        batch           : {
+                            products        : 1,
+                            categories      : 1,
+                            brands          : 1
+                        },
+                        deleted         : {
+                            products        : 0,
+                            categories      : 0,
+                            brands          : 0
+                        },
+                        deletedStatus   : {
+                            products        : false,
+                            categories      : false,
+                            brands          : false
+                        }
                     },
                     imported        : {
                         page            : 1,
@@ -422,8 +439,12 @@
                         this.data.imported.batch += 1
                         this.doImport(step)
                     } else {
-                        if( this.data.importProducts ) {
+                        if( this.data.importProducts && !this.data.unimported.deletedStatus.products ) {
                             this.getUnimported(true)
+                        } else if( this.data.unimported.deletedStatus.products && !this.data.unimported.deletedStatus.categories ) {
+                            this.getProductCategories(true)
+                        } else if( this.data.unimported.deletedStatus.products && this.data.unimported.deletedStatus.categories && !this.data.unimported.deletedStatus.brands ) {
+                            this.getProductBrands(true)
                         } else {
                             this.data.loading = false
 
@@ -452,10 +473,58 @@
                             this.deleteUnimported(this.data.unimported.items)
                         }
                     } else {
-                        this.data.loading = false
-                        this.data.cleaningUp = false
-
-                        this.stepTo(6)
+                        this.data.unimported.deletedStatus.products = true
+                        this.getProductCategories(true)
+                    }
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            getProductCategories(deleteUnassigned = false) {
+                axios({
+                    url     : mosWC.ajax.url,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        action      : 'getProductCategories',
+                        data        : {
+                            nonce       : mosWC.ajax.nonce,
+                            parent      : 0
+                        }
+                    })
+                }).then(response => {
+                    if( 0 < response.data.length ) {
+                        if( deleteUnassigned ) {
+                            this.deleteUnassignedCategories(response.data)
+                        }
+                    } else {
+                        if( deleteUnassigned ) {
+                            this.data.unimported.deletedStatus.categories = true
+                            this.getProductBrands(true)
+                        }
+                    }
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            getProductBrands(deleteUnassigned = false) {
+                axios({
+                    url     : mosWC.ajax.url,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        action      : 'getProductBrands',
+                        data        : {
+                            nonce       : mosWC.ajax.nonce
+                        }
+                    })
+                }).then(response => {
+                    if( 0 < response.data.length ) {
+                        if( deleteUnassigned ) {
+                            this.deleteUnassignedBrands(response.data)
+                        }
+                    } else {
+                        if( deleteUnassigned ) {
+                            this.data.unimported.deletedStatus.brands = true
+                        }
                     }
                 }).catch(error => {
                     console.log(error)
@@ -471,18 +540,71 @@
                         action      : 'ajaxDeleteUnimported',
                         data        : {
                             nonce           : mosWC.ajax.nonce,
-                            items           : items.slice((this.data.unimported.batch - 1), this.data.unimported.batch)
+                            items           : items.slice((this.data.unimported.batch.products - 1), this.data.unimported.batch.products)
                         }
                     })
                 }).then(response => {
-                    this.data.unimported.batch += 1
-                    this.data.unimported.deleted += 1
+                    this.data.unimported.batch.products += 1
+                    this.data.unimported.deleted.products += 1
 
-                    if( this.data.unimported.deleted < this.data.unimported.items.length ) {
+                    if( this.data.unimported.deleted.products <= this.data.unimported.items.length ) {
                         this.deleteUnimported(items)
                     } else {
-                        this.data.unimported.deleted = 0
-                        this.data.unimported.items = []
+                        this.data.unimported.deletedStatus.products = true
+                        this.getProductCategories(true)
+                    }
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            deleteUnassignedCategories(categories = []) {
+                this.data.cleaningUp = true
+
+                axios({
+                    url     : mosWC.ajax.url,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        action      : 'ajaxDeleteUnassignedCategories',
+                        data        : {
+                            nonce       : mosWC.ajax.nonce,
+                            categories  : categories.slice((this.data.unimported.batch.categories - 1), this.data.unimported.batch.categories)
+                        }
+                    })
+                }).then(response => {
+                    this.data.unimported.batch.categories += 1
+                    this.data.unimported.deleted.categories += 1
+                    
+                    if( this.data.unimported.deleted.categories <= categories.length ) {
+                        this.deleteUnassignedCategories(categories)
+                    } else {
+                        this.data.unimported.deletedStatus.categories = true
+                        this.getProductBrands(true)
+                    }
+                }).catch(error => {
+                    console.log(error)
+                })
+            },
+            deleteUnassignedBrands(brands = []) {
+                this.data.cleaningUp = true
+
+                axios({
+                    url     : mosWC.ajax.url,
+                    method  : 'POST',
+                    data    : Qs.stringify({
+                        action      : 'ajaxDeleteUnassignedBrands',
+                        data        : {
+                            nonce       : mosWC.ajax.nonce,
+                            brands      : brands.slice((this.data.unimported.batch.brands - 1), this.data.unimported.batch.brands)
+                        }
+                    })
+                }).then(response => {
+                    this.data.unimported.batch.brands += 1
+                    this.data.unimported.deleted.brands += 1
+
+                    if( this.data.unimported.deleted.brands <= brands.length ) {
+                        this.deleteUnassignedBrands(brands)
+                    } else {
+                        this.data.unimported.deletedStatus.brands = true
                         this.data.loading = false
                         this.data.cleaningUp = false
 

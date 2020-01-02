@@ -13,12 +13,20 @@ if( !class_exists('MOS_WC_Handler') ) :
             add_action('init', __CLASS__ .'::createAttributes');
             add_action('wp_ajax_nopriv_getProductTaxonomies', __CLASS__ .'::getProductTaxonomies');
             add_action('wp_ajax_getProductTaxonomies', __CLASS__ .'::getProductTaxonomies');
+            add_action('wp_ajax_nopriv_getProductCategories', __CLASS__ .'::getProductCategories');
+            add_action('wp_ajax_getProductCategories', __CLASS__ .'::getProductCategories');
+            add_action('wp_ajax_nopriv_getProductBrands', __CLASS__ .'::getProductBrands');
+            add_action('wp_ajax_getProductBrands', __CLASS__ .'::getProductBrands');
             add_action('wp_ajax_nopriv_ajaxImport', __CLASS__ .'::ajaxImport');
             add_action('wp_ajax_ajaxImport', __CLASS__ .'::ajaxImport');
             add_action('wp_ajax_nopriv_ajaxGetUnimported', __CLASS__ .'::ajaxGetUnimported');
             add_action('wp_ajax_ajaxGetUnimported', __CLASS__ .'::ajaxGetUnimported');
             add_action('wp_ajax_nopriv_ajaxDeleteUnimported', __CLASS__ .'::ajaxDeleteUnimported');
             add_action('wp_ajax_ajaxDeleteUnimported', __CLASS__ .'::ajaxDeleteUnimported');
+            add_action('wp_ajax_nopriv_ajaxDeleteUnassignedCategories', __CLASS__ .'::ajaxDeleteUnassignedCategories');
+            add_action('wp_ajax_ajaxDeleteUnassignedCategories', __CLASS__ .'::ajaxDeleteUnassignedCategories');
+            add_action('wp_ajax_nopriv_ajaxDeleteUnassignedBrands', __CLASS__ .'::ajaxDeleteUnassignedBrands');
+            add_action('wp_ajax_ajaxDeleteUnassignedBrands', __CLASS__ .'::ajaxDeleteUnassignedBrands');
 
             self::addTaxClass('GST');
         }
@@ -142,6 +150,30 @@ if( !class_exists('MOS_WC_Handler') ) :
             
             return 0 < count($query->posts) ? $query->posts[0] : FALSE;
         }
+
+        /**
+         * Get product by taxonomy and delete taxonomy if none exists.
+         * 
+         * @return void
+         */
+        public static function deleteTaxonmyWithEmptyProducts($termID, $taxonomy) {
+            $products = new WP_Query([
+                'post_type'         => 'product',
+                'posts_per_page'    => -1,
+                'tax_query'         => [
+                    [
+                        'taxonomy'      => $taxonomy,
+                        'field'         => 'term_id',
+                        'terms'         => $termID
+                    ]
+                ]
+            ]);
+
+            if( !$products->have_posts() ) :
+                wp_delete_term($termID, $taxonomy);
+            endif;
+            wp_reset_postdata();
+        }
         
 
         /**
@@ -176,6 +208,49 @@ if( !class_exists('MOS_WC_Handler') ) :
             return wp_send_json([
                 'taxonomies'    => $taxonomies
             ]);
+        }
+
+        /**
+         * Ajax get product categories.
+         * 
+         * @return json
+         */
+        public static function getProductCategories() {
+            if( !defined('DOING_AJAX') && !DOING_AJAX )
+                die();
+
+            if( !wp_verify_nonce($_POST['data']['nonce'], MOS_WC_NONCE_KEY) ) 
+                die();
+
+            $data = @$_POST['data'];
+
+            $categories = get_terms([
+                'taxonomy'      => 'product_cat',
+                'hide_empty'    => FALSE,
+                'parent'        => isset($data['parent']) ? intval($data['parent']) : 0
+            ]);
+
+            wp_send_json($categories);
+        }
+
+        /**
+         * Ajax get product brands.
+         * 
+         * @return json
+         */
+        public static function getProductBrands() {
+            if( !defined('DOING_AJAX') && !DOING_AJAX ) 
+                die();
+
+            if( !wp_verify_nonce($_POST['data']['nonce'], MOS_WC_NONCE_KEY) ) 
+                die();
+
+            $brands = get_terms([
+                'taxonomy'      => 'pwb-brand',
+                'hide_empty'    => FALSE
+            ]);
+
+            wp_send_json($brands);
         }
 
         /**
@@ -294,7 +369,6 @@ if( !class_exists('MOS_WC_Handler') ) :
                         $product = $productID ? wc_get_product($productID) : new WC_Product();
                         $productDescription = '';
                         $productCategories = [];
-                        $productTags = [];
                         $productAttrs = [];
                 
                         if( $productID && $data_store->is_existing_sku($productID, $item[$legend['sku']]) ) :
@@ -328,7 +402,7 @@ if( !class_exists('MOS_WC_Handler') ) :
                                 else :
                                     $category = wp_insert_category([
                                         'taxonomy'  => 'product_cat',
-                                        'cat_name'  => $item[$legend['category']]
+                                        'cat_name'  => strtoupper($item[$legend['category']])
                                     ]);
                                 endif;
 
@@ -346,7 +420,7 @@ if( !class_exists('MOS_WC_Handler') ) :
                                 else :
                                     $childCategory = wp_insert_category([
                                         'taxonomy'          => 'product_cat',
-                                        'cat_name'          => $item[$legend['category_child']],
+                                        'cat_name'          => strtoupper($item[$legend['category_child']]),
                                         'category_parent'   => $category
                                     ]);
                                 endif;
@@ -367,7 +441,7 @@ if( !class_exists('MOS_WC_Handler') ) :
                                 else :
                                     $grandchildCategory = wp_insert_category([
                                         'taxonomy'          => 'product_cat',
-                                        'cat_name'          => $item[$legend['category_grandchild']],
+                                        'cat_name'          => strtoupper($item[$legend['category_grandchild']]),
                                         'category_parent'   => $childCategory
                                     ]);
                                 endif;
@@ -386,32 +460,12 @@ if( !class_exists('MOS_WC_Handler') ) :
                                 else :
                                     $brand = wp_insert_category([
                                         'taxonomy'  => 'pwb-brand',
-                                        'cat_name'  => $item[$legend['pwb-brand']]
+                                        'cat_name'  => strtoupper($item[$legend['pwb-brand']])
                                     ]);
                                 endif;
                             endif;
 
-                            // Product tags
-                            if( (isset($legend['tag1']) && !empty($item[$legend['tag1']])) || 
-                                (isset($legend['tag2']) && !empty($item[$legend['tag2']])) ) :
-                                $tags = isset($item[$legend['tag1']]) ? explode(',', $item[$legend['tag1']]) : [];
-                                $tags = isset($item[$legend['tag2']]) ? array_merge($tags, explode(',', $item[$legend['tag2']])) : $tags;
-
-                                foreach( $tags as $tag ) :
-                                    $tagExists = term_exists($tag, 'product_tag');
-                                    if( $tagExists ) :
-                                        $productTags = array_merge($productTags, $tagExists);
-                                    else :
-                                        $productTags[] = wp_insert_category([
-                                            'taxonomy'  => 'product_tag',
-                                            'cat_name'  => $tag
-                                        ]);
-                                    endif;
-                                endforeach;
-                            endif;
-
                             $product->set_category_ids($productCategories);
-                            $product->set_tag_ids($productTags);
 
                             // Product title
                             if( isset($legend['title']) && 
@@ -686,6 +740,7 @@ if( !class_exists('MOS_WC_Handler') ) :
 
             $data = @$_POST['data'];
 
+            // Delete products
             if( 0 < count($data['items']) ) :
                 foreach( $data['items'] as $item ) :
                     $product = wc_get_product($item);
@@ -699,6 +754,125 @@ if( !class_exists('MOS_WC_Handler') ) :
             
             wp_send_json([
                 'success'    => TRUE
+            ]);
+        }
+
+        /**
+         * Ajax delete unassigned categories.
+         * 
+         * @return json
+         */
+        public static function ajaxDeleteUnassignedCategories() {
+            if( !defined('DOING_AJAX') && !DOING_AJAX ) 
+                die();
+
+            if( !wp_verify_nonce($_POST['data']['nonce'], MOS_WC_NONCE_KEY) )
+                die();
+
+            $data = @$_POST['data'];
+
+            // Delete categories
+            if( isset($data['categories']) && 
+                is_array($data['categories']) && 
+                0 < count($data['categories']) ) :
+                $childCount = 0;
+                foreach( $data['categories'] as $category ) :
+                    $childCategories = get_terms([
+                        'taxonomy'      => 'product_cat',
+                        'hide_empty'    => FALSE,
+                        'parent'        => $category['term_id']
+                    ]);
+
+                    if( !$category['count'] && !$childCategories ) :
+                        wp_delete_term($category['term_id'], 'product_cat');
+                        continue;
+                    endif;
+
+                    if( 0 < count($childCategories) ) :
+                        $childCount++;
+                        foreach( $childCategories as $childCategory ) :
+                            $grandchildCount = 0;
+                            $grandchildCategories = get_terms([
+                                'taxonomy'      => 'product_cat',
+                                'hide_empty'    => FALSE,
+                                'parent'        => $childCategory->term_id
+                            ]);
+
+                            if( !$childCategory->count && !$grandchildCategories ) :
+                                wp_delete_term($childCategory->term_id, 'product_cat');
+                                continue;
+                            endif;
+
+                            if( 0 < count($grandchildCategories) ) :
+                                foreach( $grandchildCategories as $grandchildCategory ) :
+                                    if( !$grandchildCategory->count ) :
+                                        wp_delete_term($grandchildCategory->term_id, 'product_cat');
+                                        continue;
+                                    endif;
+
+                                    // Check for products assigned with the category
+                                    self::deleteTaxonmyWithEmptyProducts($grandchildCategory->term_id, 'product_cat');
+
+                                    $grandchildCount++;
+                                endforeach;
+                            endif;
+
+                            if( !$grandchildCount ) :
+                                wp_delete_term($childCategory->term_id, 'product_cat');
+                                continue;
+                            endif;
+
+                            // Check for products assigned with the category
+                            self::deleteTaxonmyWithEmptyProducts($childCategory->term_id, 'product_cat');
+                        endforeach;
+                    endif;
+
+                    if( !$childCount ) :
+                        wp_delete_term($category['term_id'], 'product_cat');
+                        continue;
+                    endif;
+
+                    // Check for products assigned with the category
+                    self::deleteTaxonmyWithEmptyProducts($category['term_id'], 'product_cat');
+                endforeach;
+            endif;
+
+            wp_send_json([
+                'success'   => TRUE
+            ]);
+        }
+
+        /**
+         * Ajax delete unassigned brands.
+         * 
+         * @return json
+         */
+        public static function ajaxDeleteUnassignedBrands() {
+            if( !defined('DOING_AJAX') && !DOING_AJAX )
+                die();
+
+            if( !wp_verify_nonce($_POST['data']['nonce'], MOS_WC_NONCE_KEY) )
+                die();
+
+            $data = @$_POST['data'];
+
+            // Delete brands
+            if( isset($data['brands']) && 
+                is_array($data['brands']) && 
+                0 < count($data['brands']) ) :
+                foreach( $data['brands'] as $brand ) :
+                    if( !$brand['count'] ) :
+                        wp_delete_term($brand['term_id'], 'pwb-brand');
+                        continue;
+                    endif;
+
+                    // Check for products assigned with the brand
+                    self::deleteTaxonmyWithEmptyProducts($brand['term_id'], 'pwb-brand');                  
+                endforeach;
+            endif;
+
+            wp_send_json([
+                'success'   => TRUE
             ]);
         }
     }
